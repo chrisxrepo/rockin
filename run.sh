@@ -1,0 +1,1 @@
+./rockin -logtostderr=1
