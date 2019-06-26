@@ -94,6 +94,9 @@ extern uint32_t NextPower(uint32_t size);
 
 extern void RandomBytes(unsigned char bytes[], size_t len);
 
+// bit 1 count
+extern size_t BitCount(void *s, long count);
+
 // print string by hex mode
 extern void PrintHex(const char *data, size_t len);
 
