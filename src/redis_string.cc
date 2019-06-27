@@ -29,8 +29,6 @@ void SetCommand(std::shared_ptr<RedisCmd> cmd) {
 
   db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
     auto &args = cmd->Args();
-    args[1]->debug = true;
-    args[2]->debug = true;
     auto obj = std::make_shared<RedisString>(args[2]);
     db.second->Set(args[1], obj, TypeString);
     cmd->ReplyOk();

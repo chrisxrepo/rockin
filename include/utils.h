@@ -37,13 +37,11 @@ namespace rockin {
 struct buffer_t {
   size_t len;
   char *data;
-  bool debug;
 
-  buffer_t() : len(0), data(nullptr), debug(false) {}
-  buffer_t(char *d, size_t l) : len(l), data(d), debug(false) {}
+  buffer_t() : len(0), data(nullptr) {}
+  buffer_t(char *d, size_t l) : len(l), data(d) {}
   ~buffer_t() {
     if (data) free(data);
-    if (debug) std::cout << "~buffer_t" << std::endl;
   }
 
   bool operator==(const buffer_t &b) const {
