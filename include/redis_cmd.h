@@ -17,16 +17,14 @@ class RedisCmd : public std::enable_shared_from_this<RedisCmd> {
   void Handle();
 
   void ReplyNil();
-  void ReplyTypeWaring();
-  void ReplyError(std::string &&errstr);
-  void ReplyString(std::string &&str);
+  void ReplyOk();
+  void ReplyError(std::shared_ptr<buffer_t> err);
+  void ReplyString(std::shared_ptr<buffer_t> str);
   void ReplyInteger(int64_t num);
-  void ReplyBulk(std::string &&str);
-  void ReplyArray(std::vector<std::string> &values);
-  void ReplyArray(std::vector<std::string> &values, std::vector<bool> &exists);
+  void ReplyBulk(std::shared_ptr<buffer_t> str);
+  void ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values);
 
-  const std::string &Cmd();
-  std::vector<std::string> &Args();
+  std::vector<std::shared_ptr<buffer_t>> &Args();
 
   // redisCmd string
   std::string ToString();
@@ -40,8 +38,23 @@ class RedisCmd : public std::enable_shared_from_this<RedisCmd> {
 
  private:
   std::weak_ptr<Conn> conn_;
-  std::vector<std::string> args_;
+  std::vector<std::shared_ptr<buffer_t>> args_;
   int mbulk_;
+
+ public:
+  static std::shared_ptr<buffer_t> g_nil;
+  static std::shared_ptr<buffer_t> g_begin_err;
+  static std::shared_ptr<buffer_t> g_begin_str;
+  static std::shared_ptr<buffer_t> g_begin_int;
+  static std::shared_ptr<buffer_t> g_begin_array;
+  static std::shared_ptr<buffer_t> g_begin_bulk;
+  static std::shared_ptr<buffer_t> g_proto_split;
+  static std::shared_ptr<buffer_t> g_reply_ok;
+  static std::shared_ptr<buffer_t> g_reply_type_warn;
+  static std::shared_ptr<buffer_t> g_reply_mset_args_err;
+  static std::shared_ptr<buffer_t> g_reply_integer_err;
+  static std::shared_ptr<buffer_t> g_reply_float_err;
+  static std::shared_ptr<buffer_t> g_reply_nan_err;
 };
 
 }  // namespace rockin

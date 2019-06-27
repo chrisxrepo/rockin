@@ -70,14 +70,14 @@ void RedisCmd::Handle() {
     return;
   }
 
-  std::string cmd = Cmd();
+  std::string cmd(args_[0]->data, args_[0]->len);
   std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::tolower);
   auto iter = g_handle_map.find(cmd);
   if (iter == g_handle_map.end()) {
     std::ostringstream build;
     build << "ERR unknown command `" << cmd << "`, with args beginning with: ";
     for (int i = 1; i < args_.size(); i++) build << "`" << args_[i] << "`, ";
-    ReplyError(build.str());
+    ReplyError(make_buffer(build.str()));
     return;
   }
 
@@ -85,7 +85,7 @@ void RedisCmd::Handle() {
       int(args_.size()) < -iter->second.arity) {
     std::ostringstream build;
     build << "ERR wrong number of arguments for '" << cmd << "' command";
-    ReplyError(build.str());
+    ReplyError(make_buffer(build.str()));
     return;
   }
 
@@ -105,7 +105,7 @@ bool RedisCmd::ParseMultiCommand(ByteBuf &buf) {
       std::ostringstream build;
       build << "ERR Protocol error: invalid multi bulk length:"
             << std::string(ptr + 1, end - ptr - 1);
-      ReplyError(build.str());
+      ReplyError(make_buffer(build.str()));
       CloseConn();
       return false;
     }
@@ -123,7 +123,7 @@ bool RedisCmd::ParseMultiCommand(ByteBuf &buf) {
     if (*nptr != '$') {
       std::ostringstream build;
       build << "ERR Protocol error: expected '$', got '" << *nptr << "'";
-      ReplyError(build.str());
+      ReplyError(make_buffer(build.str()));
       CloseConn();
       return false;
     }
@@ -133,7 +133,7 @@ bool RedisCmd::ParseMultiCommand(ByteBuf &buf) {
       std::ostringstream build;
       build << "ERR Protocol error: invalid bulk length:"
             << std::string(nptr + 1, end - nptr - 1);
-      ReplyError(build.str());
+      ReplyError(make_buffer(build.str()));
       CloseConn();
       return false;
     }
@@ -146,12 +146,12 @@ bool RedisCmd::ParseMultiCommand(ByteBuf &buf) {
     if (*(dptr + bulk) != '\r' || *(dptr + bulk + 1) != '\n') {
       std::ostringstream build;
       build << "ERR Protocol error: invalid bulk length";
-      ReplyError(build.str());
+      ReplyError(make_buffer(build.str()));
       CloseConn();
       return false;
     }
 
-    args_.push_back(std::string(dptr, bulk));
+    args_.push_back(make_buffer(dptr, bulk));
     buf.move_readptr(dptr - nptr + bulk + 2);
   }
 
@@ -207,7 +207,7 @@ bool RedisCmd::ParseInlineCommand(ByteBuf &buf) {
           ptr++;
         }
       }
-      args_.push_back(build.str());
+      args_.push_back(make_buffer(build.str()));
 
     } else if (*ptr == '\'') {
       ptr++;
@@ -224,14 +224,14 @@ bool RedisCmd::ParseInlineCommand(ByteBuf &buf) {
           ptr++;
         }
       }
-      args_.push_back(build.str());
+      args_.push_back(make_buffer(build.str()));
 
     } else {
       char *space = Strchr(ptr, end - ptr, ' ');
       if (space == nullptr) {
         space = end;
       }
-      args_.push_back(std::string(ptr, space - ptr));
+      args_.push_back(make_buffer(ptr, space - ptr));
       ptr = space;
     }
   }
@@ -248,52 +248,75 @@ void RedisCmd::CloseConn() {
   }
 }
 
+/////////////////////////////////////////////////////////////////
+std::shared_ptr<buffer_t> RedisCmd::g_nil = make_buffer("$-1\r\n");
+std::shared_ptr<buffer_t> RedisCmd::g_begin_err = make_buffer("-");
+std::shared_ptr<buffer_t> RedisCmd::g_begin_str = make_buffer("+");
+std::shared_ptr<buffer_t> RedisCmd::g_begin_int = make_buffer(":");
+std::shared_ptr<buffer_t> RedisCmd::g_begin_array = make_buffer("*");
+std::shared_ptr<buffer_t> RedisCmd::g_begin_bulk = make_buffer("$");
+std::shared_ptr<buffer_t> RedisCmd::g_proto_split = make_buffer("\r\n");
+std::shared_ptr<buffer_t> RedisCmd::g_reply_ok = make_buffer("+OK\r\n");
+std::shared_ptr<buffer_t> RedisCmd::g_reply_type_warn = make_buffer(
+    "WRONGTYPE Operation against a key holding the wrong kind of value");
+std::shared_ptr<buffer_t> RedisCmd::g_reply_mset_args_err =
+    make_buffer("ERR wrong number of arguments for MSET");
+std::shared_ptr<buffer_t> RedisCmd::g_reply_integer_err =
+    make_buffer("ERR value is not an integer or out of range");
+std::shared_ptr<buffer_t> RedisCmd::g_reply_float_err =
+    make_buffer("ERR value is not a valid float");
+std::shared_ptr<buffer_t> RedisCmd::g_reply_nan_err =
+    make_buffer("ERR would produce NaN or Infinity");
 void RedisCmd::ReplyNil() {
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
   }
 
-  std::vector<std::string> datas;
-  datas.push_back("$-1\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_nil);
   conn->WriteData(std::move(datas));
 }
 
-void RedisCmd::ReplyTypeWaring() {
+void RedisCmd::ReplyOk() {
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
   }
 
-  std::vector<std::string> datas;
-  datas.push_back(
-      "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_reply_ok);
   conn->WriteData(std::move(datas));
 }
 
-void RedisCmd::ReplyError(std::string &&errstr) {
+void RedisCmd::ReplyError(std::shared_ptr<buffer_t> err) {
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
   }
 
-  std::vector<std::string> datas;
-  datas.push_back("-");
-  datas.push_back(errstr);
-  datas.push_back("\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_err);
+  datas.push_back(err);
+  datas.push_back(g_proto_split);
   conn->WriteData(std::move(datas));
 }
 
-void RedisCmd::ReplyString(std::string &&str) {
+void RedisCmd::ReplyString(std::shared_ptr<buffer_t> str) {
+  if (str == nullptr) {
+    ReplyNil();
+    return;
+  }
+
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
   }
 
-  std::vector<std::string> datas;
-  datas.push_back("+");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_str);
   datas.push_back(str);
-  datas.push_back("\r\n");
+  datas.push_back(g_proto_split);
   conn->WriteData(std::move(datas));
 }
 
@@ -303,69 +326,63 @@ void RedisCmd::ReplyInteger(int64_t num) {
     return;
   }
 
-  std::vector<std::string> datas;
-  datas.push_back(":");
-  datas.push_back(Int64ToString(num));
-  datas.push_back("\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_int);
+  datas.push_back(make_buffer(Int64ToString(num)));
+  datas.push_back(g_proto_split);
   conn->WriteData(std::move(datas));
 }
 
-void RedisCmd::ReplyBulk(std::string &&str) {
+void RedisCmd::ReplyBulk(std::shared_ptr<buffer_t> str) {
+  if (str == nullptr) {
+    ReplyNil();
+    return;
+  }
+
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
   }
 
-  std::vector<std::string> datas;
-  datas.push_back("$");
-  datas.push_back(Int64ToString(str.length()));
-  datas.push_back("\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_bulk);
+  datas.push_back(make_buffer(Int64ToString(str->len)));
+  datas.push_back(g_proto_split);
   datas.push_back(str);
-  datas.push_back("\r\n");
+  datas.push_back(g_proto_split);
   conn->WriteData(std::move(datas));
 }
 
-void RedisCmd::ReplyArray(std::vector<std::string> &values) {
-  std::vector<bool> exists;
-  ReplyArray(values, exists);
-}
-
-void RedisCmd::ReplyArray(std::vector<std::string> &values,
-                          std::vector<bool> &exists) {
+void RedisCmd::ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values) {
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
   }
 
-  std::vector<std::string> datas;
-  datas.push_back("*");
-  datas.push_back(Int64ToString(values.size()));
-  datas.push_back("\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_array);
+  datas.push_back(make_buffer(Int64ToString(values.size())));
+  datas.push_back(g_proto_split);
   for (size_t i = 0; i < values.size(); i++) {
-    if (exists.size() > i && exists[i] == false) {
-      datas.push_back("$-1\r\n");
+    if (values[i] == nullptr) {
+      datas.push_back(g_nil);
     } else {
-      datas.push_back("$");
-      datas.push_back(Int64ToString(values[i].length()));
-      datas.push_back("\r\n");
-      datas.push_back(std::move(values[i]));
-      datas.push_back("\r\n");
+      datas.push_back(g_begin_bulk);
+      datas.push_back(make_buffer(Int64ToString(values[i]->len)));
+      datas.push_back(g_proto_split);
+      datas.push_back(values[i]);
+      datas.push_back(g_proto_split);
     }
   }
   conn->WriteData(std::move(datas));
 }
 
-const std::string &RedisCmd::Cmd() {
-  if (args_.size() == 0) return _emptyStr;
-  return args_[0];
-}
-
-std::vector<std::string> &RedisCmd::Args() { return args_; }
+std::vector<std::shared_ptr<buffer_t>> &RedisCmd::Args() { return args_; }
 
 std::string RedisCmd::ToString() {
   std::ostringstream build;
   for (int i = 0; i < args_.size(); ++i) {
-    build << args_[i] << " ";
+    build << std::string(args_[i]->data, args_[i]->len) << " ";
   }
 
   return build.str();

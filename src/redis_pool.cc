@@ -39,12 +39,13 @@ void RedisPool::Init(size_t thread_num) {
   }
 }
 
-std::pair<EventLoop *, RedisDB *> RedisPool::GetDB(const std::string &key) {
+std::pair<EventLoop *, RedisDB *> RedisPool::GetDB(
+    std::shared_ptr<buffer_t> key) {
   if (thread_num_ == 0) {
     return std::make_pair(nullptr, nullptr);
   }
 
-  uint64_t h = hash_->Hash((const uint8_t *)key.c_str(), key.length());
+  uint64_t h = hash_->Hash((const uint8_t *)key->data, key->len);
   int idx = h % thread_num_;
   return std::make_pair(loops_[idx], dbs_[idx]);
 }

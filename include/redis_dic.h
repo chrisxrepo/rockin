@@ -34,31 +34,31 @@ class RedisDic {
     hash_ = new SipHash(seed);
   }
 
-  std::shared_ptr<Node> Get(const std::string& key) {
+  std::shared_ptr<Node> Get(std::shared_ptr<buffer_t> key) {
     if (table_[0]->used + table_[1]->used == 0) {
       return nullptr;
     }
 
-    uint64_t h = hash_->Hash((unsigned char*)key.c_str(), key.length());
+    uint64_t h = hash_->Hash((unsigned char*)key->data, key->len);
     for (int i = 0; i < 2; i++) {
       if (table_[i]->size == 0) continue;
 
       uint64_t idx = h & table_[i]->sizemask;
       auto node = table_[i]->head[idx];
       while (node) {
-        if (node->key_ == key) return node;
+        if (*(node->key_.get()) == *(key.get())) return node;
         node = node->next_;
       }
     }
     return nullptr;
   }
 
-  bool Delete(const std::string& key) {
+  bool Delete(std::shared_ptr<buffer_t> key) {
     if (table_[0]->used + table_[1]->used == 0) {
       return false;
     }
 
-    uint64_t h = hash_->Hash((unsigned char*)key.c_str(), key.length());
+    uint64_t h = hash_->Hash((unsigned char*)key->data, key->len);
     for (int i = 0; i < 2; i++) {
       if (table_[i]->size == 0) continue;
 
@@ -66,7 +66,7 @@ class RedisDic {
       auto node = table_[i]->head[idx];
       std::shared_ptr<Node> prev = nullptr;
       while (node) {
-        if (node->key_ == key) {
+        if (*(node->key_.get()) == *(key.get())) {
           if (prev == nullptr) {
             table_[i]->head[idx] = node->next_;
           } else {
@@ -88,7 +88,7 @@ class RedisDic {
     this->Expand();
 
     uint64_t idx =
-        hash_->Hash((unsigned char*)node->key_.c_str(), node->key_.length()) &
+        hash_->Hash((unsigned char*)node->key_->data, node->key_->len) &
         table_[0]->sizemask;
 
     node->next_ = table_[0]->head[idx];

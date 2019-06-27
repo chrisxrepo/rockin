@@ -33,6 +33,34 @@
             std::placeholders::_3)
 
 namespace rockin {
+
+struct buffer_t {
+  size_t len;
+  char *data;
+  bool debug;
+
+  buffer_t() : len(0), data(nullptr), debug(false) {}
+  buffer_t(char *d, size_t l) : len(l), data(d), debug(false) {}
+  ~buffer_t() {
+    if (data) free(data);
+    if (debug) std::cout << "~buffer_t" << std::endl;
+  }
+
+  bool operator==(const buffer_t &b) const {
+    if (len != b.len) return false;
+    for (size_t i = 0; i < len; i++) {
+      if (*((char *)data + i) != *((char *)b.data + i)) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
+extern std::shared_ptr<buffer_t> make_buffer(size_t len);
+extern std::shared_ptr<buffer_t> make_buffer(const char *v, size_t len);
+extern std::shared_ptr<buffer_t> make_buffer(const std::string &str);
+
 // get ctype error
 extern std::string GetCerr();
 

@@ -9,12 +9,10 @@ class RedisCmd;
 
 struct MultiResult {
   std::atomic<uint32_t> cnt;
-  std::vector<std::string> values;
-  std::vector<bool> exists;
   std::atomic<int64_t> int_value;
+  std::vector<std::shared_ptr<buffer_t>> str_values;
 
-  MultiResult(uint32_t cnt_)
-      : cnt(cnt_), values(cnt_), exists(cnt_), int_value(0) {}
+  MultiResult(uint32_t cnt_) : cnt(cnt_), int_value(0), str_values(cnt_) {}
 };
 
 // command

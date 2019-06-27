@@ -10,13 +10,14 @@ namespace rockin {
 
 // command
 void CommandCommand(std::shared_ptr<RedisCmd> cmd) {
-  cmd->ReplyString("OK");
+  cmd->ReplyOk();
   return;
 }
 
 // ping
 void PingCommand(std::shared_ptr<RedisCmd> cmd) {
-  cmd->ReplyString("PONG");
+  static std::shared_ptr<buffer_t> g_reply_pong = make_buffer("PONG");
+  cmd->ReplyString(g_reply_pong);
   return;
 }
 
@@ -25,7 +26,7 @@ void InfoCommand(std::shared_ptr<RedisCmd> cmd) {
   std::cout << "Mem:" << size << std::endl;
   malloc_stats_print(NULL, NULL, NULL);
 
-  cmd->ReplyString("info.");
+  cmd->ReplyOk();
 }
 
 // del key1 ...

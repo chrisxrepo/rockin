@@ -8,11 +8,11 @@ RedisDB::RedisDB() {}
 
 RedisDB::~RedisDB() {}
 
-std::shared_ptr<RedisObj> RedisDB::Get(const std::string &key) {
+std::shared_ptr<RedisObj> RedisDB::Get(std::shared_ptr<buffer_t> key) {
   return dic_.Get(key);
 }
 
-std::shared_ptr<RedisObj> RedisDB::GetReplyNil(const std::string &key,
+std::shared_ptr<RedisObj> RedisDB::GetReplyNil(std::shared_ptr<buffer_t> key,
                                                std::shared_ptr<RedisCmd> cmd) {
   auto obj = Get(key);
   if (obj == nullptr) {
@@ -23,7 +23,7 @@ std::shared_ptr<RedisObj> RedisDB::GetReplyNil(const std::string &key,
   return obj;
 }
 
-void RedisDB::Set(std::string &&key, std::shared_ptr<void> value,
+void RedisDB::Set(std::shared_ptr<buffer_t> key, std::shared_ptr<void> value,
                   ValueType type) {
   auto obj = dic_.Get(key);
   if (obj == nullptr) {
@@ -42,7 +42,7 @@ void RedisDB::SetObj(std::shared_ptr<RedisObj> obj, std::shared_ptr<void> value,
 }
 
 // delete by key
-bool RedisDB::Delete(const std::string &key) { return dic_.Delete(key); }
+bool RedisDB::Delete(std::shared_ptr<buffer_t> key) { return dic_.Delete(key); }
 
 bool CheckAndReply(std::shared_ptr<RedisObj> obj, std::shared_ptr<RedisCmd> cmd,
                    int type) {
@@ -50,7 +50,7 @@ bool CheckAndReply(std::shared_ptr<RedisObj> obj, std::shared_ptr<RedisCmd> cmd,
     return true;
   }
 
-  cmd->ReplyTypeWaring();
+  cmd->ReplyError(RedisCmd::g_reply_type_warn);
   return false;
 }
 
@@ -60,33 +60,29 @@ void ReplyRedisObj(std::shared_ptr<RedisObj> obj,
     cmd->ReplyNil();
   } else if (obj->type() == TypeString) {
     auto str_value = std::static_pointer_cast<RedisString>(obj->value());
-    std::string str = str_value->Value();
-    cmd->ReplyBulk(std::move(str));
+    cmd->ReplyBulk(str_value->Value());
   } else if (obj->type() == TypeInteger) {
     auto int_value = std::static_pointer_cast<RedisInteger>(obj->value());
-    std::string str = Int64ToString(int_value->Value());
-    cmd->ReplyBulk(std::move(str));
+    cmd->ReplyBulk(make_buffer(Int64ToString(int_value->Value())));
   }
 }
 
-bool ObjToString(std::shared_ptr<RedisObj> obj, std::string &v) {
+std::shared_ptr<buffer_t> ObjToString(std::shared_ptr<RedisObj> obj) {
   if (obj->type() & TypeString) {
     auto str_value = std::static_pointer_cast<RedisString>(obj->value());
-    v = str_value->Value();
-    return true;
+    return str_value->Value();
   } else if (obj->type() & TypeInteger) {
     auto int_value = std::static_pointer_cast<RedisInteger>(obj->value());
-    v = Int64ToString(int_value->Value());
-    return true;
+    return make_buffer(Int64ToString(int_value->Value()));
   }
-  return false;
+  return nullptr;
 }
 
 bool ObjToInt64(std::shared_ptr<RedisObj> obj, int64_t &v) {
   if (obj->type() & TypeString) {
     auto str_value = std::static_pointer_cast<RedisString>(obj->value());
-    if (StringToInt64(str_value->Value().c_str(), str_value->Value().length(),
-                      &v) == 0) {
+    if (StringToInt64(str_value->Value()->data, str_value->Value()->len, &v) ==
+        0) {
       return false;
     }
     return true;
@@ -101,8 +97,8 @@ bool ObjToInt64(std::shared_ptr<RedisObj> obj, int64_t &v) {
 bool ObjToDouble(std::shared_ptr<RedisObj> obj, double &v) {
   if (obj->type() & TypeString) {
     auto str_value = std::static_pointer_cast<RedisString>(obj->value());
-    if (StringToDouble(str_value->Value().c_str(), str_value->Value().length(),
-                       &v) == 0) {
+    if (StringToDouble(str_value->Value()->data, str_value->Value()->len, &v) ==
+        0) {
       return false;
     }
     return true;

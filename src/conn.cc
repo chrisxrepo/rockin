@@ -126,11 +126,19 @@ void Conn::Close() {
 
 class _WriteData {
  public:
-  std::vector<std::string> datas;
+  const std::vector<std::shared_ptr<buffer_t>> datas;
   uv_buf_t *bufs;
+
+  _WriteData(const std::vector<std::shared_ptr<buffer_t>> &&d) : datas(d) {
+    bufs = (uv_buf_t *)malloc(sizeof(uv_buf_t) * datas.size());
+    for (int i = 0; i < datas.size(); ++i)
+      *(bufs + i) = uv_buf_init(datas[i]->data, datas[i]->len);
+  }
+
+  ~_WriteData() { free(bufs); }
 };
 
-bool Conn::WriteData(std::vector<std::string> &&datas) {
+bool Conn::WriteData(std::vector<std::shared_ptr<buffer_t>> &&datas) {
   EventLoop *el = (EventLoop *)t_->loop->data;
   std::weak_ptr<Conn> weak_conn = shared_from_this();
   el->RunInLoopNoWait([weak_conn, datas = std::move(datas)](EventLoop *el) {
@@ -139,22 +147,13 @@ bool Conn::WriteData(std::vector<std::string> &&datas) {
       return;
     }
 
-    int nbufs = datas.size();
-    _WriteData *write = new _WriteData();
-    write->bufs = (uv_buf_t *)malloc(sizeof(uv_buf_t) * nbufs);
-    write->datas = std::move(datas);
-
-    for (int i = 0; i < nbufs; ++i)
-      *(write->bufs + i) = uv_buf_init((char *)write->datas[i].c_str(),
-                                       write->datas[i].length());
-
+    _WriteData *write = new _WriteData(std::move(datas));
     uv_write_t *req = (uv_write_t *)malloc(sizeof(uv_write_t));
     req->data = write;
 
-    uv_write(req, (uv_stream_t *)conn->handle(), write->bufs, nbufs,
-             [](uv_write_t *req, int status) {
+    uv_write(req, (uv_stream_t *)conn->handle(), write->bufs,
+             write->datas.size(), [](uv_write_t *req, int status) {
                _WriteData *write = (_WriteData *)req->data;
-               free(write->bufs);
                delete write;
                free(req);
              });
@@ -190,13 +189,14 @@ void Conn::OnRead(ssize_t nread, const uv_buf_t *buf) {
   }
 
   bool ret = cmd_->Parse(buf_);
-  if (ret == false || cmd_->Cmd().empty()) {
+  if (ret == false || cmd_->Args().size() == 0) {
     return;
   }
 
-  std::string cmd = cmd_->Cmd();
-  if (cmd == "quit") {
-    cmd_->ReplyString("OK");
+  auto &args = cmd_->Args();
+  if (args[0]->len == 4 && args[0]->data[0] == 'q' && args[0]->data[1] == 'u' &&
+      args[0]->data[2] == 'i' && args[0]->data[3] == 't') {
+    cmd_->ReplyOk();
     return Close();
   }
 

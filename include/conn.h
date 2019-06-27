@@ -16,7 +16,7 @@ class Conn : public std::enable_shared_from_this<Conn> {
 
   void Close();
 
-  bool WriteData(std::vector<std::string> &&datas);
+  bool WriteData(std::vector<std::shared_ptr<buffer_t>> &&datas);
 
   uv_tcp_t *handle() { return t_; }
 

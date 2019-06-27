@@ -15,7 +15,7 @@ class RedisPool {
 
   void Init(size_t thread_num);
 
-  std::pair<EventLoop *, RedisDB *> GetDB(const std::string &key);
+  std::pair<EventLoop *, RedisDB *> GetDB(std::shared_ptr<buffer_t> key);
 
  private:
   SipHash *hash_;

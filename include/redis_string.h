@@ -16,7 +16,6 @@ class RedisInteger {
   void SetValue(int64_t v) { value_ = v; }
 
   int64_t Value() { return value_; }
-  // std::string ToString() override { return Int64ToString(value_); }
 
  private:
   int64_t value_;
@@ -25,18 +24,14 @@ class RedisInteger {
 class RedisString {
  public:
   RedisString() {}
-  RedisString(const std::string &value) : value_(value) {}
-  RedisString(std::string &&value) : value_(value) {}
+  RedisString(std::shared_ptr<buffer_t> value) : value_(value) {}
 
-  void SetValue(const std::string &v) { value_.assign(v); }
-  void SetValue(std::string &&v) { value_.assign(v); }
-  void Append(const std::string &v) { value_.append(v); }
+  void SetValue(std::shared_ptr<buffer_t> v) { value_ = v; }
 
-  const std::string &Value() { return value_; }
-  //  std::string ToString() override { return value_; }
+  std::shared_ptr<buffer_t> Value() { return value_; }
 
  private:
-  std::string value_;
+  std::shared_ptr<buffer_t> value_;
 };
 
 // get key

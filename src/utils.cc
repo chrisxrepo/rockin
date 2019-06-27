@@ -9,6 +9,22 @@
 
 namespace rockin {
 
+std::shared_ptr<buffer_t> make_buffer(size_t len) {
+  char *d = (char *)malloc(len);
+  return std::make_shared<buffer_t>(d, len);
+}
+
+std::shared_ptr<buffer_t> make_buffer(const char *v, size_t len) {
+  char *d = (char *)malloc(len);
+  memcpy(d, v, len);
+
+  return std::make_shared<buffer_t>(d, len);
+}
+
+std::shared_ptr<buffer_t> make_buffer(const std::string &str) {
+  return make_buffer(str.c_str(), str.length());
+}
+
 std::string GetCerr() {
   const char *errstr = strerror(errno);
   if (errstr == nullptr) {
