@@ -34,37 +34,54 @@ class RedisString {
   std::shared_ptr<buffer_t> value_;
 };
 
-// get key
+// GET key
 extern void GetCommand(std::shared_ptr<RedisCmd> cmd);
 
-// set key value
+// SET key value
 extern void SetCommand(std::shared_ptr<RedisCmd> cmd);
 
-// append key value
+// APPEND key value
 extern void AppendCommand(std::shared_ptr<RedisCmd> cmd);
 
-// getset key value
+// GETSET key value
 extern void GetSetCommand(std::shared_ptr<RedisCmd> cmd);
 
-// mget key1 ....
+// MGET key1 ....
 extern void MGetCommand(std::shared_ptr<RedisCmd> cmd);
 
-// mset key1 value1 ....
+// MSET key1 value1 ....
 extern void MSetCommand(std::shared_ptr<RedisCmd> cmd);
 
-// incr key
+// INCR key
 extern void IncrCommand(std::shared_ptr<RedisCmd> cmd);
 
-// incrby key value
+// INCRBY key value
 extern void IncrbyCommand(std::shared_ptr<RedisCmd> cmd);
 
-// decr key
+// DECR key
 extern void DecrCommand(std::shared_ptr<RedisCmd> cmd);
 
-// decr key value
+// DECR key value
 extern void DecrbyCommand(std::shared_ptr<RedisCmd> cmd);
 
-// decr key value
+// DECRBYFLOAT key value
 extern void IncrbyFloatCommand(std::shared_ptr<RedisCmd> cmd);
 
+// SETBIT key offset value
+extern void SetBitCommand(std::shared_ptr<RedisCmd> cmd);
+
+// GETBIT key offset
+extern void GetBitCommand(std::shared_ptr<RedisCmd> cmd);
+
+// BITCOUNT key [start end]
+extern void BitCountCommand(std::shared_ptr<RedisCmd> cmd);
+
+// BITOP AND destkey srckey1 srckey2 srckey3 ... srckeyN
+// BITOP OR destkey srckey1 srckey2 srckey3... srckeyN
+// BITOP XOR destkey srckey1 srckey2 srckey3... srckeyN
+// BITOP NOT destkey srckey
+extern void BitOpCommand(std::shared_ptr<RedisCmd> cmd);
+
+// BITPOS key bit[start][end]
+extern void BitOpsCommand(std::shared_ptr<RedisCmd> cmd);
 }  // namespace rockin

@@ -279,4 +279,113 @@ void IncrbyFloatCommand(std::shared_ptr<RedisCmd> cmd) {
   });
 }
 
+static bool GetBitOffset(const std::string &str, std::shared_ptr<RedisCmd> cmd,
+                         int64_t &offset) {
+  if (StringToInt64(str.c_str(), str.length(), &offset) != 1) {
+    cmd->ReplyError("bit offset is not an integer or out of range");
+    return false;
+  }
+
+  if (offset < 0 || (offset >> 3) >= 512 * 1024 * 1024) {
+    cmd->ReplyError("bit offset is not an integer or out of range");
+    return false;
+  }
+
+  return true;
+}
+
+// SETBIT key offset value
+void SetBitCommand(std::shared_ptr<RedisCmd> cmd) {
+  std::pair<EventLoop *, RedisDB *> db =
+      RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
+
+  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+    int64_t offset, on;
+    auto &args = cmd->Args();
+    if (GetBitOffset(args[2], cmd, offset) == false) {
+      return;
+    }
+
+    if (StringToInt64(args[3].c_str(), args[3].length(), &on) != 1 || on & ~1) {
+      cmd->ReplyError("bit is not an integer or out of range");
+      return;
+    }
+
+    auto obj = db.second->Get(args[1]);
+    if (obj != nullptr && !CheckAndReply(obj, cmd, TypeString | TypeInteger)) {
+      return;
+    }
+    
+  });
+}
+
+// GETBIT key offset
+void GetBitCommand(std::shared_ptr<RedisCmd> cmd) {
+  std::pair<EventLoop *, RedisDB *> db =
+      RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
+
+  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {});
+}
+
+// BITCOUNT key [start end]
+void BitCountCommand(std::shared_ptr<RedisCmd> cmd) {
+  std::pair<EventLoop *, RedisDB *> db =
+      RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
+
+  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+    auto &args = cmd->Args();
+    if (args.size() != 2 && args.size() != 4) {
+      cmd->ReplyError("ERR syntax error");
+      return;
+    }
+
+    auto obj = db.second->Get(args[1]);
+    if (obj == nullptr) {
+      cmd->ReplyInteger(0);
+      return;
+    }
+    if (!CheckAndReply(obj, cmd, TypeString | TypeInteger)) {
+      return;
+    }
+
+    std::string str;
+    ObjToString(obj, str);
+    if (args.size() == 2) {
+      cmd->ReplyInteger(BitCount((void *)str.c_str(), str.length()));
+    } else {
+      int64_t start, end;
+      if (StringToInt64(args[2].c_str(), args[2].length(), &start) != 1 &&
+          StringToInt64(args[3].c_str(), args[3].length(), &end) != 1) {
+        cmd->ReplyError("ERR value is not an integer or out of range");
+        return;
+      }
+      if (start < 0 && end < 0 && start > end) {
+        cmd->ReplyInteger(0);
+        return;
+      }
+
+      if (start < 0) start = str.length() + start;
+      if (end < 0) end = str.length() + end;
+      if (start < 0) start = 0;
+      if (end < 0) end = 0;
+      if (end >= str.length()) end = str.length() - 1;
+      if (start > end) {
+        cmd->ReplyInteger(0);
+      } else {
+        cmd->ReplyInteger(
+            BitCount((void *)(str.c_str() + start), end - start + 1));
+      }
+    }
+  });
+}
+
+// BITOP AND destkey srckey1 srckey2 srckey3 ... srckeyN
+// BITOP OR destkey srckey1 srckey2 srckey3... srckeyN
+// BITOP XOR destkey srckey1 srckey2 srckey3... srckeyN
+// BITOP NOT destkey srckey
+void BitOpCommand(std::shared_ptr<RedisCmd> cmd) {}
+
+// BITPOS key bit[start][end]
+void BitOpsCommand(std::shared_ptr<RedisCmd> cmd) {}
+
 }  // namespace rockin
