@@ -105,12 +105,6 @@ extern std::string Int64ToString(int64_t value);
 extern int StringToInt64(const char *s, size_t slen, int64_t *value);
 extern int64_t StringToInt64(const char *s, size_t slen);
 
-extern int StringToDouble(const char *s, size_t slen, double *dp);
-extern double StringToDouble(const char *s, size_t slen);
-
-extern int DoubleToString(char *buf, size_t len, double value, int human);
-extern std::string DoubleToString(double v, int human);
-
 // char <-> hex
 extern bool IsHexDigit(char c);
 extern char HexDigitToInt(char c);

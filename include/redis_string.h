@@ -69,7 +69,4 @@ extern void DecrCommand(std::shared_ptr<RedisCmd> cmd);
 // decr key value
 extern void DecrbyCommand(std::shared_ptr<RedisCmd> cmd);
 
-// decr key value
-extern void IncrbyFloatCommand(std::shared_ptr<RedisCmd> cmd);
-
 }  // namespace rockin

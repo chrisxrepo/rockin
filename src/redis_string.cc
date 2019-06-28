@@ -34,20 +34,6 @@ bool ObjToInt64(std::shared_ptr<RedisObj> obj, int64_t &v) {
   return false;
 }
 
-bool ObjToDouble(std::shared_ptr<RedisObj> obj, double &v) {
-  if (obj->type() & RedisObj::String) {
-    auto str_value = std::static_pointer_cast<RedisString>(obj->value());
-    if (obj->encode() == RedisString::Int) {
-      v = str_value->IntValue();
-      return true;
-    } else {
-      if (StringToDouble(str_value->Value()->data, str_value->Value()->len, &v))
-        return true;
-    }
-  }
-  return false;
-}
-
 // get key
 void GetCommand(std::shared_ptr<RedisCmd> cmd) {
   std::pair<EventLoop *, RedisDB *> db =
@@ -258,57 +244,6 @@ void DecrbyCommand(std::shared_ptr<RedisCmd> cmd) {
     }
 
     IncrDecrProcess(cmd, db.second, -tmpv);
-  });
-}
-
-// decr key value
-void IncrbyFloatCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
-      RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
-
-  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
-    double addv;
-    auto &args = cmd->Args();
-    if (StringToDouble(args[2]->data, args[2]->len, &addv) == 0) {
-      cmd->ReplyError(RedisCmd::g_reply_float_err);
-      return;
-    }
-
-    auto obj = db.second->Get(args[1]);
-    if (obj != nullptr && !CheckAndReply(obj, cmd, RedisObj::String)) {
-      return;
-    }
-
-    std::shared_ptr<RedisString> str_value;
-    if (obj == nullptr) {
-      str_value =
-          std::make_shared<RedisString>(make_buffer(DoubleToString(addv, 1)));
-      db.second->Set(std::move(args[1]), str_value, RedisObj::String,
-                     RedisString::Raw);
-    } else {
-      double v;
-      if (!ObjToDouble(obj, v)) {
-        cmd->ReplyError(RedisCmd::g_reply_float_err);
-        return;
-      }
-
-      v += addv;
-      if (isnan(v) || isinf(v)) {
-        cmd->ReplyError(RedisCmd::g_reply_nan_err);
-        return;
-      }
-
-      if (obj->type() == RedisObj::String) {
-        str_value = std::static_pointer_cast<RedisString>(obj->value());
-        str_value->SetValue(make_buffer(DoubleToString(v, 1)));
-      } else {
-        str_value =
-            std::make_shared<RedisString>(make_buffer(DoubleToString(v, 1)));
-      }
-
-      obj->value() = str_value;
-    }
-    cmd->ReplyString(str_value->Value());
   });
 }
 

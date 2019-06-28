@@ -41,7 +41,6 @@ void RedisCmd::InitHandle() {
   ADD_HANDLE("incrby", IncrbyCommand, 3);
   ADD_HANDLE("decr", DecrCommand, 2);
   ADD_HANDLE("decrby", DecrbyCommand, 3);
-  ADD_HANDLE("incrbyfloat", IncrbyFloatCommand, 3);
 }
 
 RedisCmd::RedisCmd(std::shared_ptr<Conn> conn) : conn_(conn), mbulk_(-1) {}
@@ -263,8 +262,6 @@ std::shared_ptr<buffer_t> RedisCmd::g_reply_mset_args_err =
     make_buffer("ERR wrong number of arguments for MSET");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_integer_err =
     make_buffer("ERR value is not an integer or out of range");
-std::shared_ptr<buffer_t> RedisCmd::g_reply_float_err =
-    make_buffer("ERR value is not a valid float");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_nan_err =
     make_buffer("ERR would produce NaN or Infinity");
 void RedisCmd::ReplyNil() {
