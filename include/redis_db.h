@@ -4,32 +4,35 @@
 
 namespace rockin {
 class RedisCmd;
-enum ValueType {
-  TypeString = 1,
-  TypeInteger = 2,
-  TypeList = 4,
-  TypeHash = 8,
-  TypeSet = 16,
-  TypeZSet = 32,
-};
 
 class RedisDB;
 class RedisObj {
  public:
+  enum ValueType {
+    String = 1,
+    List = 2,
+    Hash = 4,
+    Set = 8,
+    ZSet = 16,
+  };
+
   friend RedisDB;
   friend RedisDic<RedisObj>;
 
   RedisObj() {}
-  RedisObj(int t, std::shared_ptr<buffer_t> key, std::shared_ptr<void> v)
-      : type_(t), key_(key), value_(v) {}
+  RedisObj(int type, int encode, std::shared_ptr<buffer_t> key,
+           std::shared_ptr<void> v)
+      : type_(type), encode_(encode), key_(key), value_(v) {}
   virtual ~RedisObj() {}
 
   int type() { return type_; }
+  int encode() { return encode_; }
   std::shared_ptr<buffer_t> key() { return key_; }
   std::shared_ptr<void> value() { return value_; }
 
  private:
-  int type_;
+  unsigned char type_;
+  unsigned char encode_;
   std::shared_ptr<buffer_t> key_;
   std::shared_ptr<void> value_;
   std::shared_ptr<RedisObj> next_;
@@ -48,11 +51,12 @@ class RedisDB {
                                         std::shared_ptr<RedisCmd> cmd);
 
   // set
-  void Set(std::shared_ptr<buffer_t> key, std::shared_ptr<void> value,
-           ValueType type);
+  std::shared_ptr<RedisObj> Set(std::shared_ptr<buffer_t> key,
+                                std::shared_ptr<void> value, unsigned char type,
+                                unsigned char encode);
 
   void SetObj(std::shared_ptr<RedisObj> obj, std::shared_ptr<void> value,
-              ValueType type);
+              unsigned char type, unsigned char encode);
 
   // delete by key
   bool Delete(std::shared_ptr<buffer_t> key);
@@ -67,9 +71,4 @@ extern bool CheckAndReply(std::shared_ptr<RedisObj> obj,
 extern void ReplyRedisObj(std::shared_ptr<RedisObj> obj,
                           std::shared_ptr<RedisCmd> cmd);
 
-extern std::shared_ptr<buffer_t> ObjToString(std::shared_ptr<RedisObj> obj);
-
-extern bool ObjToInt64(std::shared_ptr<RedisObj> obj, int64_t &v);
-
-extern bool ObjToDouble(std::shared_ptr<RedisObj> obj, double &v);
 }  // namespace rockin
