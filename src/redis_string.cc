@@ -328,7 +328,52 @@ void GetBitCommand(std::shared_ptr<RedisCmd> cmd) {
 }
 
 // BITCOUNT key [start end]
-void BitCountCommand(std::shared_ptr<RedisCmd> cmd) {}
+void BitCountCommand(std::shared_ptr<RedisCmd> cmd) {
+  std::pair<EventLoop *, RedisDB *> loop =
+      RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
+
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+    auto &args = cmd->Args();
+    auto obj = db->Get(args[1]);
+    if (obj == nullptr) {
+      cmd->ReplyInteger(0);
+      return;
+    }
+    if (!CheckAndReply(obj, cmd, RedisObj::Type_String)) {
+      return;
+    }
+
+    auto str_value = GenString(OBJ_STRING(obj), obj->encode());
+    if (args.size() == 2) {
+      cmd->ReplyInteger(BitCount(str_value->data, str_value->len));
+    } else if (args.size() == 4) {
+      int64_t start, end;
+      if (StringToInt64(args[2]->data, args[2]->len, &start) != 1 ||
+          StringToInt64(args[3]->data, args[3]->len, &end) != 1) {
+        return;
+      }
+
+      if (start < 0 && end < 0 && start > end) {
+        cmd->ReplyInteger(0);
+        return;
+      }
+
+      if (start < 0) start = str_value->len + start;
+      if (end < 0) end = str_value->len + end;
+      if (start < 0) start = 0;
+      if (end < 0) end = 0;
+      if (end >= str_value->len) end = str_value->len - 1;
+      if (start > end) {
+        cmd->ReplyInteger(0);
+      } else {
+        cmd->ReplyInteger(BitCount(str_value->data + start, end - start + 1));
+      }
+    } else {
+      cmd->ReplyError(RedisCmd::g_reply_syntax_err);
+    }
+  });
+}
 
 // BITOP AND destkey srckey1 srckey2 srckey3 ... srckeyN
 // BITOP OR destkey srckey1 srckey2 srckey3... srckeyN

@@ -263,6 +263,8 @@ std::shared_ptr<buffer_t> RedisCmd::g_proto_split = make_buffer("\r\n");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_ok = make_buffer("+OK\r\n");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_type_warn = make_buffer(
     "WRONGTYPE Operation against a key holding the wrong kind of value");
+std::shared_ptr<buffer_t> RedisCmd::g_reply_syntax_err =
+    make_buffer("ERR syntax error");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_mset_args_err =
     make_buffer("ERR wrong number of arguments for MSET");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_integer_err =
