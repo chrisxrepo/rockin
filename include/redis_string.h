@@ -8,37 +8,6 @@ namespace rockin {
 class Conn;
 class RedisCmd;
 
-class RedisString {
- public:
-  enum Type {
-    Raw = 1,
-    Int = 2,
-  };
-
-  RedisString() {}
-
-  RedisString(int64_t value) { SetIntValue(value); }
-
-  RedisString(std::shared_ptr<buffer_t> value) : value_(value) {}
-
-  void SetValue(std::shared_ptr<buffer_t> v) { value_ = v; }
-  std::shared_ptr<buffer_t> Value() { return value_; }
-
-  void SetIntValue(int64_t value) {
-    if (value_ == nullptr || value_->len < sizeof(int64_t))
-      value_ = make_buffer(sizeof(int64_t));
-    *((int64_t *)value_->data) = value;
-  }
-
-  int64_t IntValue() {
-    if (value_ == nullptr || value_->len < sizeof(int64_t)) return 0;
-    return *((int64_t *)value_->data);
-  }
-
- private:
-  std::shared_ptr<buffer_t> value_;
-};
-
 // GET key
 extern void GetCommand(std::shared_ptr<RedisCmd> cmd);
 

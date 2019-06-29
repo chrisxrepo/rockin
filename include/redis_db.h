@@ -2,6 +2,10 @@
 #include "redis_dic.h"
 #include "utils.h"
 
+#define OBJ_STRING(obj) std::static_pointer_cast<buffer_t>(obj->value())
+
+#define BUF_INT64(v) (*((int64_t *)v->data))
+
 namespace rockin {
 class RedisCmd;
 
@@ -9,11 +13,16 @@ class RedisDB;
 class RedisObj {
  public:
   enum ValueType {
-    String = 1,
-    List = 2,
-    Hash = 4,
-    Set = 8,
-    ZSet = 16,
+    Type_String = 1,
+    Type_List = 2,
+    Type_Hash = 4,
+    Type_Set = 8,
+    Type_ZSet = 16,
+  };
+
+  enum EncodeType {
+    Encode_Raw = 1,
+    Encode_Int = 2,
   };
 
   friend RedisDB;
@@ -64,6 +73,11 @@ class RedisDB {
  private:
   RedisDic<RedisObj> dic_;
 };
+
+extern std::shared_ptr<buffer_t> GenString(std::shared_ptr<buffer_t> value,
+                                           int encode);
+
+extern bool GenInt64(std::shared_ptr<buffer_t> str, int encode, int64_t &v);
 
 extern bool CheckAndReply(std::shared_ptr<RedisObj> obj,
                           std::shared_ptr<RedisCmd> cmd, int type);

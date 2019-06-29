@@ -141,7 +141,8 @@ class _WriteData {
 bool Conn::WriteData(std::vector<std::shared_ptr<buffer_t>> &&datas) {
   EventLoop *el = (EventLoop *)t_->loop->data;
   std::weak_ptr<Conn> weak_conn = shared_from_this();
-  el->RunInLoopNoWait([weak_conn, datas = std::move(datas)](EventLoop *el) {
+
+  el->RunInLoopNoWait([weak_conn, datas](EventLoop *el) {
     auto conn = weak_conn.lock();
     if (conn == nullptr) {
       return;

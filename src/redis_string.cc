@@ -7,123 +7,82 @@
 #include "redis_pool.h"
 
 namespace rockin {
-
-std::shared_ptr<buffer_t> ObjToString(std::shared_ptr<RedisObj> obj) {
-  if (obj->type() & RedisObj::String) {
-    auto str_value = std::static_pointer_cast<RedisString>(obj->value());
-    if (obj->encode() == RedisString::Int) {
-      return make_buffer(Int64ToString(str_value->IntValue()));
-    } else {
-      return str_value->Value();
-    }
-  }
-  return nullptr;
-}
-
-bool ObjToInt64(std::shared_ptr<RedisObj> obj, int64_t &v) {
-  if (obj->type() & RedisObj::String) {
-    auto str_value = std::static_pointer_cast<RedisString>(obj->value());
-    if (obj->encode() == RedisString::Int) {
-      v = str_value->IntValue();
-      return true;
-    } else {
-      if (StringToInt64(str_value->Value()->data, str_value->Value()->len, &v))
-        return true;
-    }
-  }
-  return false;
-}
-
-std::shared_ptr<RedisString> GenRedisStringRaw(RedisDB *db,
-                                               std::shared_ptr<RedisObj> obj) {
-  if (obj->type() != RedisObj::String) return nullptr;
-
-  auto str_value = std::static_pointer_cast<RedisString>(obj->value());
-  if (obj->encode() == RedisString::Raw) return str_value;
-
-  auto new_value = std::make_shared<RedisString>(
-      make_buffer(Int64ToString(str_value->IntValue())));
-  db->SetObj(obj, new_value, RedisObj::String, RedisString::Raw);
-
-  return new_value;
-}
-
 // get key
 void GetCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
-    auto obj = db.second->GetReplyNil(cmd->Args()[1], cmd);
-    if (obj == nullptr || !CheckAndReply(obj, cmd, RedisObj::String)) {
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+    auto obj = db->GetReplyNil(cmd->Args()[1], cmd);
+    if (obj == nullptr || !CheckAndReply(obj, cmd, RedisObj::Type_String)) {
       return;
     }
 
-    cmd->ReplyBulk(ObjToString(obj));
+    cmd->ReplyBulk(GenString(OBJ_STRING(obj), obj->encode()));
   });
 }
 
 // set key value
 void SetCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
     auto &args = cmd->Args();
-    auto obj = std::make_shared<RedisString>(args[2]);
-    db.second->Set(args[1], obj, RedisObj::String, RedisString::Raw);
+    db->Set(args[1], args[2], RedisObj::Type_String, RedisObj::Encode_Raw);
     cmd->ReplyOk();
   });
 }
 
 // append key value
 void AppendCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
     auto &args = cmd->Args();
-    auto obj = db.second->Get(args[1]);
-    if (obj != nullptr && !CheckAndReply(obj, cmd, RedisObj::String)) {
+    auto obj = db->Get(args[1]);
+    if (obj != nullptr && !CheckAndReply(obj, cmd, RedisObj::Type_String)) {
       return;
     }
 
-    std::shared_ptr<RedisString> str_value;
+    std::shared_ptr<buffer_t> str_value;
     if (obj == nullptr) {
-      str_value = std::make_shared<RedisString>(args[2]);
-      db.second->Set(std::move(args[1]), str_value, RedisObj::String,
-                     RedisString::Raw);
-    } else if (obj->type() == RedisObj::String) {
-      auto old_value = ObjToString(obj);
-      auto new_value = make_buffer(old_value->len + args[2]->len);
-      memcpy(new_value->data, old_value->data, old_value->len);
-      memcpy(new_value->data + old_value->len, args[2]->data, args[2]->len);
-      str_value = std::make_shared<RedisString>(new_value);
-      db.second->SetObj(obj, str_value, RedisObj::String, RedisString::Raw);
+      str_value = args[2];
+      db->Set(args[1], str_value, RedisObj::Type_String, RedisObj::Encode_Raw);
+    } else if (obj->type() == RedisObj::Type_String) {
+      str_value = GenString(OBJ_STRING(obj), obj->encode());
+      int oldlen = str_value->len;
+      str_value = copy_buffer(str_value, oldlen + args[2]->len);
+      memcpy(str_value->data + oldlen, args[2]->data, args[2]->len);
+      db->SetObj(obj, str_value, RedisObj::Type_String, RedisObj::Encode_Raw);
     }
 
-    cmd->ReplyInteger(str_value->Value()->len);
+    cmd->ReplyInteger(str_value->len);
   });
 }
 
 // getset key value
 void GetSetCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
     auto &args = cmd->Args();
-    auto obj = db.second->Get(args[1]);
-    if (obj != nullptr && !CheckAndReply(obj, cmd, RedisObj::String)) {
+    auto obj = db->Get(args[1]);
+    if (obj != nullptr && !CheckAndReply(obj, cmd, RedisObj::Type_String)) {
       return;
     }
     ReplyRedisObj(obj, cmd);
 
-    auto new_value = std::make_shared<RedisString>(args[2]);
     if (obj == nullptr) {
-      db.second->Set(args[1], new_value, RedisObj::String, RedisString::Raw);
+      db->Set(args[1], args[2], RedisObj::Type_String, RedisObj::Encode_Raw);
     } else {
-      db.second->SetObj(obj, new_value, RedisObj::String, RedisString::Raw);
+      db->SetObj(obj, args[2], RedisObj::Type_String, RedisObj::Encode_Raw);
     }
   });
 }
@@ -134,14 +93,15 @@ void MGetCommand(std::shared_ptr<RedisCmd> cmd) {
   int cnt = args.size() - 1;
   auto rets = std::make_shared<MultiResult>(cnt);
   for (int i = 0; i < cnt; i++) {
-    std::pair<EventLoop *, RedisDB *> db =
+    std::pair<EventLoop *, RedisDB *> loop =
         RedisPool::GetInstance()->GetDB(args[i + 1]);
 
-    db.first->RunInLoopNoWait([i, cmd, rets, db](EventLoop *el) {
+    auto db = loop.second;
+    loop.first->RunInLoopNoWait([i, cmd, rets, db](EventLoop *el) {
       auto &args = cmd->Args();
-      auto obj = db.second->Get(args[i + 1]);
+      auto obj = db->Get(args[i + 1]);
       if (obj != nullptr) {
-        rets->str_values[i] = ObjToString(obj);
+        rets->str_values[i] = GenString(OBJ_STRING(obj), obj->encode());
       }
 
       rets->cnt--;
@@ -163,14 +123,14 @@ void MSetCommand(std::shared_ptr<RedisCmd> cmd) {
   int cnt = args.size() / 2;
   auto rets = std::make_shared<MultiResult>(cnt);
   for (int i = 0; i < cnt; i++) {
-    std::pair<EventLoop *, RedisDB *> db =
+    std::pair<EventLoop *, RedisDB *> loop =
         RedisPool::GetInstance()->GetDB(args[i * 2 + 1]);
 
-    db.first->RunInLoopNoWait([i, cmd, rets, db](EventLoop *el) {
+    auto db = loop.second;
+    loop.first->RunInLoopNoWait([i, cmd, rets, db](EventLoop *el) {
       auto &args = cmd->Args();
-      auto str_value = std::make_shared<RedisString>(args[i * 2 + 2]);
-      db.second->Set(args[i * 2 + 1], str_value, RedisObj::String,
-                     RedisString::Raw);
+      db->Set(args[i * 2 + 1], args[i * 2 + 2], RedisObj::Type_String,
+              RedisObj::Encode_Raw);
 
       rets->cnt--;
       if (rets->cnt.load() == 0) {
@@ -184,26 +144,27 @@ static void IncrDecrProcess(std::shared_ptr<RedisCmd> cmd, RedisDB *db,
                             int num) {
   auto &args = cmd->Args();
   auto obj = db->Get(args[1]);
-  if (obj != nullptr && !CheckAndReply(obj, cmd, RedisObj::String)) {
+  if (obj != nullptr && !CheckAndReply(obj, cmd, RedisObj::Type_String)) {
     return;
   }
 
   if (obj == nullptr) {
-    auto value = std::make_shared<RedisString>(num);
-    obj = db->Set(args[1], value, RedisObj::String, RedisString::Int);
+    auto value = make_buffer(sizeof(int64_t));
+    BUF_INT64(value) = num;
+    obj = db->Set(args[1], value, RedisObj::Type_String, RedisObj::Encode_Int);
   } else {
     int64_t oldv;
-    if (!ObjToInt64(obj, oldv)) {
+    if (!GenInt64(OBJ_STRING(obj), obj->encode(), oldv)) {
       cmd->ReplyError(RedisCmd::g_reply_integer_err);
       return;
     }
 
-    if (obj->encode() == RedisString::Int) {
-      auto value = std::static_pointer_cast<RedisString>(obj->value());
-      value->SetIntValue(oldv + num);
+    if (obj->encode() == RedisObj::Encode_Int) {
+      BUF_INT64(OBJ_STRING(obj)) = oldv + num;
     } else {
-      auto value = std::make_shared<RedisString>(oldv + num);
-      db->SetObj(obj, value, RedisObj::String, RedisString::Int);
+      auto value = make_buffer(sizeof(int64_t));
+      BUF_INT64(value) = oldv + num;
+      db->SetObj(obj, value, RedisObj::Type_String, RedisObj::Encode_Int);
     }
   }
   ReplyRedisObj(obj, cmd);
@@ -211,19 +172,21 @@ static void IncrDecrProcess(std::shared_ptr<RedisCmd> cmd, RedisDB *db,
 
 // incr key
 void IncrCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait(
-      [cmd, db](EventLoop *el) { IncrDecrProcess(cmd, db.second, 1); });
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait(
+      [cmd, db](EventLoop *el) { IncrDecrProcess(cmd, db, 1); });
 }  // namespace rockin
 
 // incrby key value
 void IncrbyCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
     int64_t tmpv;
     auto &args = cmd->Args();
     if (StringToInt64(args[2]->data, args[2]->len, &tmpv) == 0) {
@@ -231,25 +194,27 @@ void IncrbyCommand(std::shared_ptr<RedisCmd> cmd) {
       return;
     }
 
-    IncrDecrProcess(cmd, db.second, tmpv);
+    IncrDecrProcess(cmd, db, tmpv);
   });
 }
 
 // decr key
 void DecrCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait(
-      [cmd, db](EventLoop *el) { IncrDecrProcess(cmd, db.second, -1); });
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait(
+      [cmd, db](EventLoop *el) { IncrDecrProcess(cmd, db, -1); });
 }
 
 // decr key value
 void DecrbyCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
     int64_t tmpv;
     auto &args = cmd->Args();
     if (StringToInt64(args[2]->data, args[2]->len, &tmpv) == 0) {
@@ -257,7 +222,7 @@ void DecrbyCommand(std::shared_ptr<RedisCmd> cmd) {
       return;
     }
 
-    IncrDecrProcess(cmd, db.second, -tmpv);
+    IncrDecrProcess(cmd, db, -tmpv);
   });
 }
 
@@ -278,10 +243,11 @@ static bool GetBitOffset(std::shared_ptr<buffer_t> v,
 
 // SETBIT key offset value
 void SetBitCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
     int64_t offset, on;
     auto &args = cmd->Args();
     if (GetBitOffset(args[2], cmd, offset) == false) {
@@ -293,70 +259,70 @@ void SetBitCommand(std::shared_ptr<RedisCmd> cmd) {
       return;
     }
 
-    auto obj = db.second->Get(args[1]);
-    if (obj != nullptr && !CheckAndReply(obj, cmd, RedisObj::String)) {
+    auto obj = db->Get(args[1]);
+    if (obj != nullptr && !CheckAndReply(obj, cmd, RedisObj::Type_String)) {
       return;
     }
 
     int byte = offset >> 3;
-    std::shared_ptr<RedisString> str_value;
+    std::shared_ptr<buffer_t> str_value;
     if (obj == nullptr) {
-      str_value = std::make_shared<RedisString>(make_buffer(byte + 1));
-      obj = db.second->Set(args[1], str_value, RedisObj::String,
-                           RedisString::Raw);
+      str_value = make_buffer(byte + 1);
+      obj = db->Set(args[1], str_value, RedisObj::Type_String,
+                    RedisObj::Encode_Raw);
     } else {
-      str_value = GenRedisStringRaw(db.second, obj);
+      str_value = GenString(OBJ_STRING(obj), obj->encode());
+      db->SetObj(obj, str_value, RedisObj::Type_String, RedisObj::Encode_Raw);
     }
 
-    if (str_value->Value()->len < byte + 1) {
-      auto new_value = std::make_shared<RedisString>(make_buffer(byte + 1));
-      memcpy(new_value->Value()->data, str_value->Value()->data,
-             str_value->Value()->len);
-
-      db.second->SetObj(obj, new_value, RedisObj::String, RedisString::Raw);
-      str_value = new_value;
+    if (byte + 1 > str_value->len) {
+      int oldlen = str_value->len;
+      str_value = copy_buffer(str_value, byte + 1);
+      memset(str_value->data + oldlen, 0, str_value->len - oldlen);
+      db->SetObj(obj, str_value, RedisObj::Type_String, RedisObj::Encode_Raw);
     }
 
     int bit = 7 - (offset & 0x7);
-    char byteval = str_value->Value()->data[byte];
+    char byteval = str_value->data[byte];
     cmd->ReplyInteger((byteval & (1 << bit)) ? 1 : 0);
 
     byteval &= ~(1 << bit);
     byteval |= ((on & 0x1) << bit);
-    str_value->Value()->data[byte] = byteval;
+    str_value->data[byte] = byteval;
   });
 }
 
 // GETBIT key offset
 void GetBitCommand(std::shared_ptr<RedisCmd> cmd) {
-  std::pair<EventLoop *, RedisDB *> db =
+  std::pair<EventLoop *, RedisDB *> loop =
       RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
 
-  db.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
     int64_t offset;
     auto &args = cmd->Args();
     if (GetBitOffset(args[2], cmd, offset) == false) {
       return;
     }
 
-    auto obj = db.second->Get(args[1]);
+    auto obj = db->Get(args[1]);
     if (obj == nullptr) {
       cmd->ReplyInteger(0);
       return;
     }
-    if (!CheckAndReply(obj, cmd, RedisObj::String)) {
+    if (!CheckAndReply(obj, cmd, RedisObj::Type_String)) {
       return;
     }
 
     int byte = offset >> 3;
-    auto str_value = GenRedisStringRaw(db.second, obj);
-    if (str_value->Value()->len < byte + 1) {
+    auto str_value = GenString(OBJ_STRING(obj), obj->encode());
+    if (str_value->len < byte + 1) {
       cmd->ReplyInteger(0);
       return;
     }
 
     int bit = 7 - (offset & 0x7);
-    char byteval = str_value->Value()->data[byte];
+    char byteval = str_value->data[byte];
     cmd->ReplyInteger((byteval & (1 << bit)) ? 1 : 0);
   });
 }

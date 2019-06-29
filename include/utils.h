@@ -58,6 +58,8 @@ struct buffer_t {
 extern std::shared_ptr<buffer_t> make_buffer(size_t len);
 extern std::shared_ptr<buffer_t> make_buffer(const char *v, size_t len);
 extern std::shared_ptr<buffer_t> make_buffer(const std::string &str);
+extern std::shared_ptr<buffer_t> copy_buffer(
+    std::shared_ptr<buffer_t> v, size_t len);
 
 // get ctype error
 extern std::string GetCerr();
