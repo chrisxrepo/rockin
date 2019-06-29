@@ -379,7 +379,96 @@ void BitCountCommand(std::shared_ptr<RedisCmd> cmd) {
 // BITOP OR destkey srckey1 srckey2 srckey3... srckeyN
 // BITOP XOR destkey srckey1 srckey2 srckey3... srckeyN
 // BITOP NOT destkey srckey
-void BitOpCommand(std::shared_ptr<RedisCmd> cmd) {}
+#define BITOP_AND 0
+#define BITOP_OR 1
+#define BITOP_XOR 2
+#define BITOP_NOT 3
+
+void BitOpCommand(std::shared_ptr<RedisCmd> cmd) {
+  std::pair<EventLoop *, RedisDB *> loop =
+      RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
+
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+    auto &args = cmd->Args();
+    int op = 0;
+    if (args[2]->len == 3 &&
+        (args[2]->data[0] == 'a' || args[2]->data[0] == 'A') &&
+        (args[2]->data[1] == 'n' || args[2]->data[1] == 'N') &&
+        (args[2]->data[2] == 'd' || args[2]->data[2] == 'D')) {
+      op = BITOP_AND;
+    } else if (args[2]->len == 2 &&
+               (args[2]->data[0] == 'o' || args[2]->data[0] == 'O') &&
+               (args[2]->data[1] == 'r' || args[2]->data[1] == 'R')) {
+      op = BITOP_OR;
+    } else if (args[2]->len == 3 &&
+               (args[2]->data[0] == 'x' || args[2]->data[0] == 'X') &&
+               (args[2]->data[1] == 'o' || args[2]->data[1] == 'O') &&
+               (args[2]->data[2] == 'r' || args[2]->data[2] == 'R')) {
+      op = BITOP_XOR;
+    } else if (args[2]->len == 3 &&
+               (args[2]->data[0] == 'n' || args[2]->data[0] == 'N') &&
+               (args[2]->data[1] == 'o' || args[2]->data[1] == 'O') &&
+               (args[2]->data[2] == 't' || args[2]->data[3] == 'T')) {
+      op = BITOP_NOT;
+    } else {
+      cmd->ReplyError(RedisCmd::g_reply_syntax_err);
+      return;
+    }
+
+    if (op == BITOP_NOT && args.size() != 4) {
+      cmd->ReplyError(RedisCmd::g_reply_syntax_err);
+      return;
+    }
+
+    size_t maxlen = 0;
+    std::vector<std::shared_ptr<buffer_t>> values;
+    for (int i = 3; i < args.size(); i++) {
+      auto obj = db->Get(args[i]);
+      if (obj == nullptr) {
+        values.push_back(nullptr);
+      } else {
+        if (!CheckAndReply(obj, cmd, RedisObj::Type_String)) {
+          return;
+        }
+        auto str_value = GenString(OBJ_STRING(obj), obj->encode());
+        if (str_value->len > maxlen) maxlen = str_value->len;
+        values.push_back(str_value);
+      }
+    }
+
+    if (maxlen > 0) {
+      auto res = make_buffer(maxlen);
+      for (int j = 0; j < maxlen; j++) {
+        char output = (values[0] != nullptr && values[0]->len > j)
+                          ? values[0]->data[j]
+                          : 0;
+        if (op == BITOP_NOT) output = ~output;
+        for (int i = 1; i < values.size(); i++) {
+          char byte = (values[i] != nullptr && values[i]->len > j)
+                          ? values[i]->data[j]
+                          : 0;
+          switch (op) {
+            case BITOP_AND:
+              output &= byte;
+              break;
+            case BITOP_OR:
+              output |= byte;
+              break;
+            case BITOP_XOR:
+              output ^= byte;
+              break;
+          }
+        }
+        res->data[j] = output;
+      }
+
+      db->Set(args[1], res, RedisObj::Type_String, RedisObj::Encode_Raw);
+    }
+
+    cmd->ReplyInteger(maxlen);
+  });
+}
 
 // BITPOS key bit[start][end]
 void BitOpsCommand(std::shared_ptr<RedisCmd> cmd) {}

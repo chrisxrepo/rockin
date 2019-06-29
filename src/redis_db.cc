@@ -31,11 +31,10 @@ std::shared_ptr<RedisObj> RedisDB::Set(std::shared_ptr<buffer_t> key,
   if (obj == nullptr) {
     obj = std::make_shared<RedisObj>(type, encode, std::move(key), value);
     dic_.Insert(obj);
-  } else {
-    obj->type_ = type;
-    obj->encode_ = encode;
-    obj->value_ = value;
+    return obj;
   }
+
+  SetObj(obj, value, type, encode);
   return obj;
 }
 
