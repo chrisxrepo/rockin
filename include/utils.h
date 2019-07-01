@@ -1,5 +1,6 @@
 #pragma once
 #include <uv.h>
+#include <atomic>
 #include <cstdio>
 #include <functional>
 #include <iostream>
@@ -34,15 +35,15 @@
 
 namespace rockin {
 
+extern std::atomic<int64_t> g_buffer_size;
+
 struct buffer_t {
   size_t len;
   char *data;
 
   buffer_t() : len(0), data(nullptr) {}
   buffer_t(char *d, size_t l) : len(l), data(d) {}
-  ~buffer_t() {
-    if (data) free(data);
-  }
+  ~buffer_t() {}
 
   bool operator==(const buffer_t &b) const {
     if (len != b.len) return false;
@@ -58,8 +59,8 @@ struct buffer_t {
 extern std::shared_ptr<buffer_t> make_buffer(size_t len);
 extern std::shared_ptr<buffer_t> make_buffer(const char *v, size_t len);
 extern std::shared_ptr<buffer_t> make_buffer(const std::string &str);
-extern std::shared_ptr<buffer_t> copy_buffer(
-    std::shared_ptr<buffer_t> v, size_t len);
+extern std::shared_ptr<buffer_t> copy_buffer(std::shared_ptr<buffer_t> v,
+                                             size_t len);
 
 // get ctype error
 extern std::string GetCerr();
