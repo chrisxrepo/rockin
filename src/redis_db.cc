@@ -29,20 +29,14 @@ std::shared_ptr<RedisObj> RedisDB::Set(std::shared_ptr<buffer_t> key,
                                        unsigned char encode) {
   auto obj = dic_.Get(key);
   if (obj == nullptr) {
-    obj = std::make_shared<RedisObj>(type, encode, std::move(key), value);
+    obj = std::make_shared<RedisObj>();
+    obj->key = key;
+    obj->next = nullptr;
     dic_.Insert(obj);
-    return obj;
   }
 
-  SetObj(obj, value, type, encode);
+  OBJ_SET_VALUE(obj, value, type, encode);
   return obj;
-}
-
-void RedisDB::SetObj(std::shared_ptr<RedisObj> obj, std::shared_ptr<void> value,
-                     unsigned char type, unsigned char encode) {
-  obj->value_ = value;
-  obj->type_ = type;
-  obj->encode_ = encode;
 }
 
 // delete by key
@@ -50,7 +44,7 @@ bool RedisDB::Delete(std::shared_ptr<buffer_t> key) { return dic_.Delete(key); }
 
 std::shared_ptr<buffer_t> GenString(std::shared_ptr<buffer_t> value,
                                     int encode) {
-  if (value != nullptr && encode == RedisObj::Encode_Int) {
+  if (value != nullptr && encode == Encode_Int) {
     return make_buffer(Int64ToString(BUF_INT64(value)));
   }
 
@@ -58,7 +52,7 @@ std::shared_ptr<buffer_t> GenString(std::shared_ptr<buffer_t> value,
 }
 
 bool GenInt64(std::shared_ptr<buffer_t> str, int encode, int64_t &v) {
-  if (encode == RedisObj::Encode_Int) {
+  if (encode == Encode_Int) {
     v = BUF_INT64(str);
     return true;
   } else {
@@ -71,10 +65,9 @@ bool GenInt64(std::shared_ptr<buffer_t> str, int encode, int64_t &v) {
 
 bool CheckAndReply(std::shared_ptr<RedisObj> obj, std::shared_ptr<RedisCmd> cmd,
                    int type) {
-  if (obj->type() == type) {
-    if (type == RedisObj::Type_String &&
-        (obj->encode() == RedisObj::Encode_Raw ||
-         obj->encode() == RedisObj::Encode_Int)) {
+  if (obj->type == type) {
+    if (type == Type_String &&
+        (obj->encode == Encode_Raw || obj->encode == Encode_Int)) {
       return true;
     }
   }
@@ -87,13 +80,11 @@ void ReplyRedisObj(std::shared_ptr<RedisObj> obj,
                    std::shared_ptr<RedisCmd> cmd) {
   if (obj == nullptr) {
     cmd->ReplyNil();
-  } else if (obj->type() == RedisObj::Type_String &&
-             obj->encode() == RedisObj::Encode_Raw) {
-    auto str_value = std::static_pointer_cast<buffer_t>(obj->value());
+  } else if (obj->type == Type_String && obj->encode == Encode_Raw) {
+    auto str_value = std::static_pointer_cast<buffer_t>(obj->value);
     cmd->ReplyBulk(str_value);
-  } else if (obj->type() == RedisObj::Type_String &&
-             obj->encode() == RedisObj::Encode_Int) {
-    auto str_value = std::static_pointer_cast<buffer_t>(obj->value());
+  } else if (obj->type == Type_String && obj->encode == Encode_Int) {
+    auto str_value = std::static_pointer_cast<buffer_t>(obj->value);
     cmd->ReplyInteger(BUF_INT64(str_value));
   }
 }

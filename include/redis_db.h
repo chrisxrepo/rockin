@@ -2,49 +2,39 @@
 #include "redis_dic.h"
 #include "utils.h"
 
-#define OBJ_STRING(obj) std::static_pointer_cast<buffer_t>(obj->value())
+#define OBJ_STRING(obj) std::static_pointer_cast<buffer_t>(obj->value)
+#define OBJ_SET_VALUE(o, v, t, e) \
+  do {                            \
+    o->type = t;                  \
+    o->encode = e;                \
+    o->value = v;                 \
+  } while (0)
 
 #define BUF_INT64(v) (*((int64_t *)v->data))
 
 namespace rockin {
+enum ValueType {
+  Type_String = 1,
+  Type_List = 2,
+  Type_Hash = 4,
+  Type_Set = 8,
+  Type_ZSet = 16,
+};
+
+enum EncodeType {
+  Encode_Raw = 1,
+  Encode_Int = 2,
+};
+
 class RedisCmd;
-
 class RedisDB;
-class RedisObj {
- public:
-  enum ValueType {
-    Type_String = 1,
-    Type_List = 2,
-    Type_Hash = 4,
-    Type_Set = 8,
-    Type_ZSet = 16,
-  };
 
-  enum EncodeType {
-    Encode_Raw = 1,
-    Encode_Int = 2,
-  };
-
-  friend RedisDB;
-  friend RedisDic<RedisObj>;
-
-  RedisObj() {}
-  RedisObj(int type, int encode, std::shared_ptr<buffer_t> key,
-           std::shared_ptr<void> v)
-      : type_(type), encode_(encode), key_(key), value_(v) {}
-  virtual ~RedisObj() {}
-
-  int type() { return type_; }
-  int encode() { return encode_; }
-  std::shared_ptr<buffer_t> key() { return key_; }
-  std::shared_ptr<void> value() { return value_; }
-
- private:
-  unsigned char type_;
-  unsigned char encode_;
-  std::shared_ptr<buffer_t> key_;
-  std::shared_ptr<void> value_;
-  std::shared_ptr<RedisObj> next_;
+struct RedisObj {
+  unsigned char type;
+  unsigned char encode;
+  std::shared_ptr<buffer_t> key;
+  std::shared_ptr<void> value;
+  std::shared_ptr<RedisObj> next;
 };
 
 class RedisDB {
@@ -63,9 +53,6 @@ class RedisDB {
   std::shared_ptr<RedisObj> Set(std::shared_ptr<buffer_t> key,
                                 std::shared_ptr<void> value, unsigned char type,
                                 unsigned char encode);
-
-  void SetObj(std::shared_ptr<RedisObj> obj, std::shared_ptr<void> value,
-              unsigned char type, unsigned char encode);
 
   // delete by key
   bool Delete(std::shared_ptr<buffer_t> key);

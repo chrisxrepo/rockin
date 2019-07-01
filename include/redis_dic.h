@@ -46,8 +46,8 @@ class RedisDic {
       uint64_t idx = h & table_[i]->sizemask;
       auto node = table_[i]->head[idx];
       while (node) {
-        if (*(node->key_.get()) == *(key.get())) return node;
-        node = node->next_;
+        if (*(node->key.get()) == *(key.get())) return node;
+        node = node->next;
       }
     }
     return nullptr;
@@ -66,17 +66,17 @@ class RedisDic {
       auto node = table_[i]->head[idx];
       std::shared_ptr<Node> prev = nullptr;
       while (node) {
-        if (*(node->key_.get()) == *(key.get())) {
+        if (*(node->key.get()) == *(key.get())) {
           if (prev == nullptr) {
-            table_[i]->head[idx] = node->next_;
+            table_[i]->head[idx] = node->next;
           } else {
-            prev->next_ = node->next_;
+            prev->next = node->next;
           }
-          node->next_ = nullptr;
+          node->next = nullptr;
           return true;
         }
         prev = node;
-        node = node->next_;
+        node = node->next;
       }
     }
     return false;
@@ -88,10 +88,10 @@ class RedisDic {
     this->Expand();
 
     uint64_t idx =
-        hash_->Hash((unsigned char*)node->key_->data, node->key_->len) &
+        hash_->Hash((unsigned char*)node->key->data, node->key->len) &
         table_[0]->sizemask;
 
-    node->next_ = table_[0]->head[idx];
+    node->next = table_[0]->head[idx];
     table_[0]->head[idx] = node;
     table_[0]->used++;
   }
@@ -128,7 +128,7 @@ class RedisDic {
     while (n > 0 && rehashidx_ < table_[1]->size) {
       Node* node = table_[1]->head[rehashidx_];
       while (node) {
-        Node* next_ = node->next_;
+        Node* next_ = node->next;
         Insert(node);
         table_[1]->used--;
         node = next_;
