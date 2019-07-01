@@ -45,7 +45,7 @@ void RedisCmd::InitHandle() {
   ADD_HANDLE("getbit", GetBitCommand, 3);
   ADD_HANDLE("bitcount", BitCountCommand, -2);
   ADD_HANDLE("bitop", BitOpCommand, -4);
-  ADD_HANDLE("bitops", BitOpsCommand, -3);
+  ADD_HANDLE("bitpos", BitPosCommand, -3);
 }
 
 RedisCmd::RedisCmd(std::shared_ptr<Conn> conn) : conn_(conn), mbulk_(-1) {}

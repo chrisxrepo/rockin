@@ -54,6 +54,6 @@ extern void BitCountCommand(std::shared_ptr<RedisCmd> cmd);
 extern void BitOpCommand(std::shared_ptr<RedisCmd> cmd);
 
 // BITPOS key bit[start][end]
-extern void BitOpsCommand(std::shared_ptr<RedisCmd> cmd);
+extern void BitPosCommand(std::shared_ptr<RedisCmd> cmd);
 
 }  // namespace rockin

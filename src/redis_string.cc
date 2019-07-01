@@ -351,6 +351,7 @@ void BitCountCommand(std::shared_ptr<RedisCmd> cmd) {
       int64_t start, end;
       if (StringToInt64(args[2]->data, args[2]->len, &start) != 1 ||
           StringToInt64(args[3]->data, args[3]->len, &end) != 1) {
+        cmd->ReplyError(RedisCmd::g_reply_integer_err);
         return;
       }
 
@@ -470,7 +471,75 @@ void BitOpCommand(std::shared_ptr<RedisCmd> cmd) {
   });
 }
 
-// BITPOS key bit[start][end]
-void BitOpsCommand(std::shared_ptr<RedisCmd> cmd) {}
+// BITPOS key bit [start][end]
+void BitPosCommand(std::shared_ptr<RedisCmd> cmd) {
+  std::pair<EventLoop *, RedisDB *> loop =
+      RedisPool::GetInstance()->GetDB(cmd->Args()[1]);
+
+  auto db = loop.second;
+  loop.first->RunInLoopNoWait([cmd, db](EventLoop *el) {
+    auto &args = cmd->Args();
+    int64_t bit = 0;
+    if (StringToInt64(args[2]->data, args[2]->len, &bit) != 1 || bit & ~1) {
+      cmd->ReplyError(RedisCmd::g_reply_integer_err);
+      return;
+    }
+
+    auto obj = db->Get(args[1]);
+    if (obj == nullptr) {
+      cmd->ReplyInteger(bit ? -1 : 0);
+      return;
+    }
+    if (!CheckAndReply(obj, cmd, Type_String)) {
+      return;
+    }
+
+    auto str_value = GenString(OBJ_STRING(obj), obj->encode);
+    bool end_given = false;
+    int64_t start, end;
+    if (args.size() == 4 || args.size() == 5) {
+      if (StringToInt64(args[3]->data, args[3]->len, &start) != 1) {
+        cmd->ReplyError(RedisCmd::g_reply_integer_err);
+        return;
+      }
+      if (args.size() == 5) {
+        if (StringToInt64(args[4]->data, args[4]->len, &end) != 1) {
+          cmd->ReplyError(RedisCmd::g_reply_integer_err);
+          return;
+        }
+        end_given = true;
+      } else {
+        end = str_value->len - 1;
+      }
+      if (start < 0) start = str_value->len + start;
+      if (end < 0) end = str_value->len + end;
+      if (start < 0) start = 0;
+      if (end < 0) end = 0;
+      if (end >= str_value->len) end = str_value->len - 1;
+    } else if (args.size() == 3) {
+      start = 0;
+      end = str_value->len - 1;
+    } else {
+      cmd->ReplyError(RedisCmd::g_reply_syntax_err);
+      return;
+    }
+
+    if (start > end) {
+      cmd->ReplyInteger(-1);
+      return;
+    }
+
+    int bytes = end - start + 1;
+    long pos = Bitpos(str_value->data + start, bytes, bit);
+
+    if (end_given && bit == 0 && pos == bytes * 8) {
+      cmd->ReplyInteger(-1);
+      return;
+    }
+
+    if (pos != -1) pos += start * 8; /* Adjust for the bytes we skipped. */
+    cmd->ReplyInteger(pos);
+  });
+}
 
 }  // namespace rockin
