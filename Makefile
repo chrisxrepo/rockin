@@ -23,7 +23,7 @@ tmp_dir:
 	mkdir -p $(OBJ_DIR)
 
 CXXFLAGS := -std=c++11 -O2 -fPIC
-LINKFLAGS := -luv -lglog -lgflags -lpthread -ljemalloc 
+LINKFLAGS := -lrocksdb -luv -lglog -lgflags -lpthread -ljemalloc 
 INCLUDE :=  -I include 
 
 SRCS := $(wildcard *.cc src/*.cc) 
