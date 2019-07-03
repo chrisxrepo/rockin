@@ -6,6 +6,8 @@
 #include "redis_cmd.h"
 #include "redis_dic.h"
 #include "redis_pool.h"
+#include "rocks_pool.h"
+#include "rocksdb/db.h"
 #include "server.h"
 
 rockin::Server* g_server;
@@ -35,6 +37,9 @@ int main(int argc, char** argv) {
   // init gflags & glog
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   google::InitGoogleLogging(argv[0]);
+
+  // init rocksdb
+  // rockin::RocksPool::GetInstance()->Init(2, "/tmp/rocksdb");
 
   // init handle
   rockin::RedisCmd::InitHandle();

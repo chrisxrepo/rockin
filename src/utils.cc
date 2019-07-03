@@ -6,6 +6,7 @@
 #include <string.h>
 #include <random>
 #include <sstream>
+#include "dirent.h"
 
 namespace rockin {
 
@@ -485,6 +486,56 @@ void RandomBytes(unsigned char bytes[], size_t len) {
   for (size_t i = 0; i < len; i++) {
     bytes[i] = (unsigned char)(mt() / UINT8_MAX);
   }
+}
+
+int64_t GetDirectorySize(const std::string &dir) {
+  DIR *dp;
+  struct dirent *entry;
+  struct stat statbuf;
+  long long int totalSize = 0;
+
+  if ((dp = opendir(dir.c_str())) == NULL) {
+    // fprintf(stderr, "Cannot open dir: %s\n", dir);
+    return -1;
+  }
+
+  lstat(dir.c_str(), &statbuf);
+  totalSize += statbuf.st_size;
+
+  while ((entry = readdir(dp)) != NULL) {
+    char subdir[256];
+    // sprintf(subdir, "%s/%s", dir, entry->d_name);
+    lstat(subdir, &statbuf);
+
+    if (S_ISDIR(statbuf.st_mode)) {
+      if (strcmp(".", entry->d_name) == 0 || strcmp("..", entry->d_name) == 0) {
+        continue;
+      }
+
+      long long int subDirSize = GetDirectorySize(subdir);
+      totalSize += subDirSize;
+    } else {
+      totalSize += statbuf.st_size;
+    }
+  }
+
+  closedir(dp);
+  return totalSize;
+}
+
+std::string GetSizeString(int64_t size) {
+  if (size < 0) {
+    return "0";
+  }
+
+  int i = 0;
+  std::vector<int> flags = {'B', 'K', 'M', 'G', 'T'};
+  while (size > 1024 && i < flags.size()) {
+    size >>= 10;
+    i++;
+  }
+
+  return Format("%d%c", size, flags[i]);
 }
 
 void PrintHex(const char *data, size_t len) {

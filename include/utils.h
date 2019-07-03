@@ -122,6 +122,13 @@ extern size_t BitCount(void *s, long count);
 // first bit
 extern long Bitpos(void *s, unsigned long count, int bit);
 
+// get directory size
+extern int64_t GetDirectorySize(const std::string &dir);
+
+// get size string
+// B/K/M/G/T
+extern std::string GetSizeString(int64_t size);
+
 // print string by hex mode
 extern void PrintHex(const char *data, size_t len);
 
