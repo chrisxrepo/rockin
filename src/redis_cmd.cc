@@ -389,6 +389,11 @@ void RedisCmd::ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values) {
   conn->WriteData(std::move(datas));
 }
 
+int RedisCmd::DbIndex() {
+  auto conn = conn_.lock();
+  return conn == nullptr ? 0 : conn->index();
+}
+
 std::string RedisCmd::ToString() {
   std::ostringstream build;
   for (int i = 0; i < args_.size(); ++i) {

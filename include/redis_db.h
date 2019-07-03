@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 #include "redis_dic.h"
 #include "utils.h"
 
@@ -43,22 +44,23 @@ class RedisDB {
   ~RedisDB();
 
   // get
-  std::shared_ptr<RedisObj> Get(std::shared_ptr<buffer_t> key);
+  std::shared_ptr<RedisObj> Get(int dbindex, std::shared_ptr<buffer_t> key);
 
   // get if nil reply
-  std::shared_ptr<RedisObj> GetReplyNil(std::shared_ptr<buffer_t> key,
+  std::shared_ptr<RedisObj> GetReplyNil(int dbindex,
+                                        std::shared_ptr<buffer_t> key,
                                         std::shared_ptr<RedisCmd> cmd);
 
   // set
-  std::shared_ptr<RedisObj> Set(std::shared_ptr<buffer_t> key,
+  std::shared_ptr<RedisObj> Set(int dbindex, std::shared_ptr<buffer_t> key,
                                 std::shared_ptr<void> value, unsigned char type,
                                 unsigned char encode);
 
   // delete by key
-  bool Delete(std::shared_ptr<buffer_t> key);
+  bool Delete(int dbindex, std::shared_ptr<buffer_t> key);
 
  private:
-  RedisDic<RedisObj> dic_;
+  std::vector<RedisDic<RedisObj>> dics_;
 };
 
 extern std::shared_ptr<buffer_t> GenString(std::shared_ptr<buffer_t> value,

@@ -27,7 +27,7 @@ class RedisCmd : public std::enable_shared_from_this<RedisCmd> {
   std::shared_ptr<Conn> conn() { return conn_.lock(); }
   std::vector<std::shared_ptr<buffer_t>> &args() { return args_; }
 
-  // redisCmd string
+  int DbIndex();
   std::string ToString();
 
  private:

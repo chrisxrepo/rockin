@@ -3,6 +3,8 @@
 #include <iostream>
 #include "utils.h"
 
+#define DBNum 16
+
 namespace rockin {
 class Conn;
 class RedisCmd;

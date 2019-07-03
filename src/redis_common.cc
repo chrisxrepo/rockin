@@ -38,7 +38,7 @@ void DelCommand(std::shared_ptr<RedisCmd> cmd) {
         RedisPool::GetInstance()->GetDB(cmd->args()[i + 1]);
 
     db.first->RunInLoopNoWait([i, cmd, rets, db](EventLoop *el) {
-      if (db.second->Delete(cmd->args()[i + 1])) {
+      if (db.second->Delete(cmd->DbIndex(), cmd->args()[i + 1])) {
         rets->int_value.fetch_add(1);
       }
 
@@ -59,7 +59,7 @@ void SelectCommand(std::shared_ptr<RedisCmd> cmd) {
     return;
   }
 
-  if (dbnum < 0 || dbnum > 15) {
+  if (dbnum < 0 || dbnum >= DBNum) {
     cmd->ReplyError(RedisCmd::g_reply_dbindex_range);
     return;
   }
