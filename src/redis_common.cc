@@ -31,14 +31,14 @@ void InfoCommand(std::shared_ptr<RedisCmd> cmd) {
 
 // del key1 ...
 void DelCommand(std::shared_ptr<RedisCmd> cmd) {
-  int cnt = cmd->Args().size() - 1;
+  int cnt = cmd->args().size() - 1;
   auto rets = std::make_shared<MultiResult>(cnt);
   for (int i = 0; i < cnt; i++) {
     std::pair<EventLoop *, RedisDB *> db =
-        RedisPool::GetInstance()->GetDB(cmd->Args()[i + 1]);
+        RedisPool::GetInstance()->GetDB(cmd->args()[i + 1]);
 
     db.first->RunInLoopNoWait([i, cmd, rets, db](EventLoop *el) {
-      if (db.second->Delete(cmd->Args()[i + 1])) {
+      if (db.second->Delete(cmd->args()[i + 1])) {
         rets->int_value.fetch_add(1);
       }
 
@@ -48,6 +48,30 @@ void DelCommand(std::shared_ptr<RedisCmd> cmd) {
       }
     });
   }
+}
+
+// select dbnum
+void SelectCommand(std::shared_ptr<RedisCmd> cmd) {
+  int64_t dbnum = 0;
+  auto &args = cmd->args();
+  if (StringToInt64(args[1]->data, args[1]->len, &dbnum) != 1) {
+    cmd->ReplyError(RedisCmd::g_reply_dbindex_invalid);
+    return;
+  }
+
+  if (dbnum < 0 || dbnum > 15) {
+    cmd->ReplyError(RedisCmd::g_reply_dbindex_range);
+    return;
+  }
+
+  auto conn = cmd->conn();
+  if (conn == nullptr) {
+    cmd->ReplyError(make_buffer("Err conn is nullptr"));
+    return;
+  }
+
+  conn->set_index(dbnum);
+  cmd->ReplyOk();
 }
 
 }  // namespace rockin

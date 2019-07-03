@@ -27,4 +27,7 @@ extern void InfoCommand(std::shared_ptr<RedisCmd> cmd);
 // del key1 ...
 extern void DelCommand(std::shared_ptr<RedisCmd> cmd);
 
+// select dbnum
+extern void SelectCommand(std::shared_ptr<RedisCmd> cmd);
+
 }  // namespace rockin

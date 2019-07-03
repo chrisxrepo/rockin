@@ -24,7 +24,8 @@ class RedisCmd : public std::enable_shared_from_this<RedisCmd> {
   void ReplyBulk(std::shared_ptr<buffer_t> str);
   void ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values);
 
-  std::vector<std::shared_ptr<buffer_t>> &Args();
+  std::shared_ptr<Conn> conn() { return conn_.lock(); }
+  std::vector<std::shared_ptr<buffer_t>> &args() { return args_; }
 
   // redisCmd string
   std::string ToString();
@@ -51,6 +52,8 @@ class RedisCmd : public std::enable_shared_from_this<RedisCmd> {
   static std::shared_ptr<buffer_t> g_proto_split;
   static std::shared_ptr<buffer_t> g_reply_ok;
   static std::shared_ptr<buffer_t> g_reply_type_warn;
+  static std::shared_ptr<buffer_t> g_reply_dbindex_invalid;
+  static std::shared_ptr<buffer_t> g_reply_dbindex_range;
   static std::shared_ptr<buffer_t> g_reply_syntax_err;
   static std::shared_ptr<buffer_t> g_reply_mset_args_err;
   static std::shared_ptr<buffer_t> g_reply_integer_err;

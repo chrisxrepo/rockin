@@ -30,6 +30,7 @@ void RedisCmd::InitHandle() {
   ADD_HANDLE("ping", PingCommand, -1);
   ADD_HANDLE("info", InfoCommand, -1);
   ADD_HANDLE("command", CommandCommand, -1);
+  ADD_HANDLE("select", SelectCommand, 2);
   ADD_HANDLE("del", DelCommand, -2);
   ADD_HANDLE("get", GetCommand, 2);
   ADD_HANDLE("set", SetCommand, -3);
@@ -263,6 +264,10 @@ std::shared_ptr<buffer_t> RedisCmd::g_proto_split = make_buffer("\r\n");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_ok = make_buffer("+OK\r\n");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_type_warn = make_buffer(
     "WRONGTYPE Operation against a key holding the wrong kind of value");
+std::shared_ptr<buffer_t> RedisCmd::g_reply_dbindex_invalid =
+    make_buffer("ERR invalid DB index");
+std::shared_ptr<buffer_t> RedisCmd::g_reply_dbindex_range =
+    make_buffer("ERR DB index is out of range");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_syntax_err =
     make_buffer("ERR syntax error");
 std::shared_ptr<buffer_t> RedisCmd::g_reply_mset_args_err =
@@ -383,8 +388,6 @@ void RedisCmd::ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values) {
   }
   conn->WriteData(std::move(datas));
 }
-
-std::vector<std::shared_ptr<buffer_t>> &RedisCmd::Args() { return args_; }
 
 std::string RedisCmd::ToString() {
   std::ostringstream build;

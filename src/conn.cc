@@ -11,7 +11,7 @@ class _ConnData {
 };
 
 Conn::Conn(uv_tcp_t *t, std::function<void(std::shared_ptr<Conn>)> close_cb)
-    : t_(t), buf_(4096) {
+    : index_(0), t_(t), buf_(4096) {
   _ConnData *cd = new _ConnData;
   cd->close_cb = close_cb;
   t->data = cd;
@@ -190,11 +190,11 @@ void Conn::OnRead(ssize_t nread, const uv_buf_t *buf) {
   }
 
   bool ret = cmd_->Parse(buf_);
-  if (ret == false || cmd_->Args().size() == 0) {
+  if (ret == false || cmd_->args().size() == 0) {
     return;
   }
 
-  auto &args = cmd_->Args();
+  auto &args = cmd_->args();
   if (args[0]->len == 4 && args[0]->data[0] == 'q' && args[0]->data[1] == 'u' &&
       args[0]->data[2] == 'i' && args[0]->data[3] == 't') {
     cmd_->ReplyOk();
