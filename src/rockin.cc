@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
 
   // init rocksdb
-  // rockin::RocksPool::GetInstance()->Init(2, "/tmp/rocksdb");
+  rockin::RocksPool::GetInstance()->Init(2, "/tmp/rocksdb");
 
   // init handle
   rockin::RedisCmd::InitHandle();

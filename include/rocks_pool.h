@@ -7,8 +7,13 @@ namespace rockin {
 class RocksPool {
  public:
   static RocksPool *GetInstance();
+  static void DestoryRocksPool();
 
-  void Init(int partnum, const std::string &path);
+  RocksPool();
+  ~RocksPool();
+
+  void Init(int partition_num, const std::string &path);
+  void Init(int partition_num, std::vector<int> dbs, const std::string &path);
 
  private:
   std::vector<std::shared_ptr<RocksDB>> dbs_;

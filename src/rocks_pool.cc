@@ -13,20 +13,46 @@ RocksPool *RocksPool::GetInstance() {
   return g_pool;
 }
 
-void RocksPool::Init(int partnum, const std::string &path) {
+void RocksPool::DestoryRocksPool() {
+  if (g_pool != nullptr) {
+    g_pool = nullptr;
+  }
+}
+
+RocksPool::RocksPool() {
   rocksdb::Env *env = rocksdb::Env::Default();
   env->SetBackgroundThreads(2, rocksdb::Env::LOW);
   env->SetBackgroundThreads(1, rocksdb::Env::HIGH);
-  rocksdb::Options options;
-  options.env = env;
-  options.max_background_compactions = 2;
-  options.max_background_flushes = 1;
-  options.compaction_filter_factory = nullptr;
+}
 
-  for (int i = 0; i < partnum; i++) {
-    std::string dbpath = path + "/" + Format("db_%05d", i + 0);
-    auto db = std::make_shared<RocksDB>(dbpath, options);
+RocksPool::~RocksPool() {
+  LOG(INFO) << "destroy rocks pool...";
+  dbs_.clear();
+}
+
+void RocksPool::Init(int partition_num, const std::string &path) {
+  for (int i = 0; i < partition_num; i++) {
+    std::string name = Format("partition_%05d", i);
+    std::string dbpath = path + "/" + name;
+    auto db = std::make_shared<RocksDB>(i, name, dbpath);
     dbs_.push_back(db);
+  }
+}
+
+void RocksPool::Init(int partition_num, std::vector<int> partitions,
+                     const std::string &path) {
+  for (int i = 0; i < partition_num; i++) {
+    dbs_.push_back(nullptr);
+  }
+
+  for (auto iter = partitions.begin(); iter != partitions.end(); ++iter) {
+    int partition_id = *iter;
+    if (partition_id >= partition_num) continue;
+
+    std::string name = Format("partition_%05d", partition_id);
+    std::string dbpath = path + "/" + name;
+    auto db = std::make_shared<RocksDB>(partition_id, name, dbpath);
+    dbs_[partition_id] = db;
   }
 }
 
