@@ -50,4 +50,12 @@ std::pair<EventLoop *, RedisDB *> RedisPool::GetDB(
   return std::make_pair(loops_[idx], dbs_[idx]);
 }
 
+std::vector<std::pair<EventLoop *, RedisDB *>> RedisPool::GetDBs() {
+  std::vector<std::pair<EventLoop *, RedisDB *>> dbs;
+  for (int i = 0; i < loops_.size(); i++) {
+    dbs.push_back(std::make_pair(loops_[i], dbs_[i]));
+  }
+  return dbs;
+}
+
 }  // namespace rockin

@@ -32,4 +32,10 @@ extern void DelCommand(std::shared_ptr<RedisCmd> cmd);
 // select dbnum
 extern void SelectCommand(std::shared_ptr<RedisCmd> cmd);
 
+// FLUSHDB
+extern void FlushDBCommand(std::shared_ptr<RedisCmd> cmd);
+
+// FLUSHALL
+extern void FlushAllCommand(std::shared_ptr<RedisCmd> cmd);
+
 }  // namespace rockin

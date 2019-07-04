@@ -59,8 +59,12 @@ class RedisDB {
   // delete by key
   bool Delete(int dbindex, std::shared_ptr<buffer_t> key);
 
+  // flush db
+  void FlushDB(int dbindex);
+
  private:
-  std::vector<RedisDic<RedisObj>> dics_;
+  std::vector<std::shared_ptr<RedisDic<RedisObj>>> dics_;
+  uv_rwlock_t lock_;
 };
 
 extern std::shared_ptr<buffer_t> GenString(std::shared_ptr<buffer_t> value,

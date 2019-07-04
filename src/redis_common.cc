@@ -34,11 +34,12 @@ void DelCommand(std::shared_ptr<RedisCmd> cmd) {
   int cnt = cmd->args().size() - 1;
   auto rets = std::make_shared<MultiResult>(cnt);
   for (int i = 0; i < cnt; i++) {
-    std::pair<EventLoop *, RedisDB *> db =
+    std::pair<EventLoop *, RedisDB *> loop =
         RedisPool::GetInstance()->GetDB(cmd->args()[i + 1]);
 
-    db.first->RunInLoopNoWait([i, cmd, rets, db](EventLoop *el) {
-      if (db.second->Delete(cmd->DbIndex(), cmd->args()[i + 1])) {
+    RedisDB *db = loop.second;
+    loop.first->RunInLoopNoWait([i, cmd, rets, db](EventLoop *el) {
+      if (db->Delete(cmd->DbIndex(), cmd->args()[i + 1])) {
         rets->int_value.fetch_add(1);
       }
 
@@ -72,6 +73,40 @@ void SelectCommand(std::shared_ptr<RedisCmd> cmd) {
 
   conn->set_index(dbnum);
   cmd->ReplyOk();
+}
+
+void FlushDBCommand(std::shared_ptr<RedisCmd> cmd) {
+  auto loops = RedisPool::GetInstance()->GetDBs();
+  auto rets = std::make_shared<MultiResult>(loops.size());
+  for (int i = 0; i < loops.size(); i++) {
+    RedisDB *db = loops[i].second;
+    loops[i].first->RunInLoopNoWait([cmd, db, rets](EventLoop *el) {
+      db->FlushDB(cmd->DbIndex());
+
+      rets->cnt--;
+      if (rets->cnt.load() == 0) {
+        cmd->ReplyOk();
+      }
+    });
+  }
+}
+
+void FlushAllCommand(std::shared_ptr<RedisCmd> cmd) {
+  auto loops = RedisPool::GetInstance()->GetDBs();
+  auto rets = std::make_shared<MultiResult>(loops.size());
+  for (int i = 0; i < loops.size(); i++) {
+    RedisDB *db = loops[i].second;
+    loops[i].first->RunInLoopNoWait([cmd, db, rets](EventLoop *el) {
+      for (int i = 0; i < DBNum; i++) {
+        db->FlushDB(i);
+      }
+
+      rets->cnt--;
+      if (rets->cnt.load() == 0) {
+        cmd->ReplyOk();
+      }
+    });
+  }
 }
 
 }  // namespace rockin

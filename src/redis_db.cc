@@ -5,14 +5,23 @@
 
 namespace rockin {
 
-RedisDB::RedisDB() : dics_(DBNum) {}
+RedisDB::RedisDB() {
+  uv_rwlock_init(&lock_);
+
+  for (int i = 0; i < DBNum; i++) {
+    dics_.push_back(std::make_shared<RedisDic<RedisObj>>());
+  }
+}
 
 RedisDB::~RedisDB() {}
 
 std::shared_ptr<RedisObj> RedisDB::Get(int dbindex,
                                        std::shared_ptr<buffer_t> key) {
-  int i = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
-  return dics_[i].Get(key);
+  uv_rwlock_rdlock(&lock_);
+  auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
+  uv_rwlock_rdunlock(&lock_);
+
+  return dic->Get(key);
 }
 
 std::shared_ptr<RedisObj> RedisDB::GetReplyNil(int dbindex,
@@ -32,13 +41,16 @@ std::shared_ptr<RedisObj> RedisDB::Set(int dbindex,
                                        std::shared_ptr<void> value,
                                        unsigned char type,
                                        unsigned char encode) {
-  int i = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
-  auto obj = dics_[i].Get(key);
+  uv_rwlock_rdlock(&lock_);
+  auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
+  uv_rwlock_rdunlock(&lock_);
+
+  auto obj = dic->Get(key);
   if (obj == nullptr) {
     obj = std::make_shared<RedisObj>();
     obj->key = key;
     obj->next = nullptr;
-    dics_[i].Insert(obj);
+    dic->Insert(obj);
   }
 
   OBJ_SET_VALUE(obj, value, type, encode);
@@ -47,8 +59,22 @@ std::shared_ptr<RedisObj> RedisDB::Set(int dbindex,
 
 // delete by key
 bool RedisDB::Delete(int dbindex, std::shared_ptr<buffer_t> key) {
-  int i = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
-  return dics_[i].Delete(key);
+  uv_rwlock_rdlock(&lock_);
+  auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
+  uv_rwlock_rdunlock(&lock_);
+
+  return dic->Delete(key);
+}
+
+void RedisDB::FlushDB(int dbindex) {
+  if (dbindex < 0 || dbindex >= DBNum) {
+    return;
+  }
+
+  auto newdic = std::make_shared<RedisDic<RedisObj>>();
+  uv_rwlock_wrlock(&lock_);
+  dics_[dbindex] = newdic;
+  uv_rwlock_wrunlock(&lock_);
 }
 
 std::shared_ptr<buffer_t> GenString(std::shared_ptr<buffer_t> value,

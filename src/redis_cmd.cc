@@ -31,6 +31,8 @@ void RedisCmd::InitHandle() {
   ADD_HANDLE("info", InfoCommand, -1);
   ADD_HANDLE("command", CommandCommand, -1);
   ADD_HANDLE("select", SelectCommand, 2);
+  ADD_HANDLE("flushdb", FlushDBCommand, 1);
+  ADD_HANDLE("flushall", FlushAllCommand, 1);
   ADD_HANDLE("del", DelCommand, -2);
   ADD_HANDLE("get", GetCommand, 2);
   ADD_HANDLE("set", SetCommand, -3);
