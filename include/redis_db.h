@@ -64,7 +64,6 @@ class RedisDB {
 
  private:
   std::vector<std::shared_ptr<RedisDic<RedisObj>>> dics_;
-  uv_rwlock_t lock_;
 };
 
 extern std::shared_ptr<buffer_t> GenString(std::shared_ptr<buffer_t> value,
