@@ -210,11 +210,17 @@ void RockinConn::OnRead(ssize_t nread, const uv_buf_t *buf) {
       break;
     }
 
+    if (cmd_args_->args().size() == 0) {
+      cmd_args_.reset();
+      continue;
+    }
+
     auto &args = cmd_args_->args();
     if (args[0]->len == 4 && args[0]->data[0] == 'q' &&
         args[0]->data[1] == 'u' && args[0]->data[2] == 'i' &&
         args[0]->data[3] == 't') {
-      return ReplyErrorAndClose(errstr);
+      ReplyOk();
+      return Close();
     }
 
     CmdTable::Default()->HandeCmd(shared_from_this(), cmd_args_);
