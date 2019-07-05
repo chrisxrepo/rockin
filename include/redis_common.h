@@ -6,8 +6,8 @@
 #define DBNum 16
 
 namespace rockin {
-class Conn;
-class RedisCmd;
+class RockinConn;
+class RedisArgs;
 
 struct MultiResult {
   std::atomic<uint32_t> cnt;
@@ -18,24 +18,24 @@ struct MultiResult {
 };
 
 // command
-extern void CommandCommand(std::shared_ptr<RedisCmd> cmd);
+extern void CommandCommand(std::shared_ptr<RedisArgs> cmd);
 
 // ping
-extern void PingCommand(std::shared_ptr<RedisCmd> cmd);
+extern void PingCommand(std::shared_ptr<RedisArgs> cmd);
 
 // info
-extern void InfoCommand(std::shared_ptr<RedisCmd> cmd);
+extern void InfoCommand(std::shared_ptr<RedisArgs> cmd);
 
 // del key1 ...
-extern void DelCommand(std::shared_ptr<RedisCmd> cmd);
+extern void DelCommand(std::shared_ptr<RedisArgs> cmd);
 
 // select dbnum
-extern void SelectCommand(std::shared_ptr<RedisCmd> cmd);
+extern void SelectCommand(std::shared_ptr<RedisArgs> cmd);
 
 // FLUSHDB
-extern void FlushDBCommand(std::shared_ptr<RedisCmd> cmd);
+extern void FlushDBCommand(std::shared_ptr<RedisArgs> cmd);
 
 // FLUSHALL
-extern void FlushAllCommand(std::shared_ptr<RedisCmd> cmd);
+extern void FlushAllCommand(std::shared_ptr<RedisArgs> cmd);
 
 }  // namespace rockin

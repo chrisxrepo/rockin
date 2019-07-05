@@ -16,9 +16,9 @@ class EventLoop {
 
   uv_loop_t *loop() { return &loop_; }
 
-  typedef std::function<void(EventLoop *lt)> LoopCallback;
-  void RunInLoopNoWait(LoopCallback callback);
-  void RunInLoopAndWait(LoopCallback callback);
+  typedef std::function<void(EventLoop *lt, std::shared_ptr<void>)> LoopCallback;
+  void RunInLoopNoWait(LoopCallback callback, std::shared_ptr<void> arg);
+  void RunInLoopAndWait(LoopCallback callback, std::shared_ptr<void> arg);
 
  private:
   void RunLoop();

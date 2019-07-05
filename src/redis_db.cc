@@ -1,5 +1,5 @@
 #include "redis_db.h"
-#include "redis_cmd.h"
+#include "redis_args.h"
 #include "redis_common.h"
 #include "redis_string.h"
 
@@ -21,7 +21,7 @@ std::shared_ptr<RedisObj> RedisDB::Get(int dbindex,
 
 std::shared_ptr<RedisObj> RedisDB::GetReplyNil(int dbindex,
                                                std::shared_ptr<buffer_t> key,
-                                               std::shared_ptr<RedisCmd> cmd) {
+                                               std::shared_ptr<RedisArgs> cmd) {
   auto obj = Get(dbindex, key);
   if (obj == nullptr) {
     cmd->ReplyNil();
@@ -84,8 +84,8 @@ bool GenInt64(std::shared_ptr<buffer_t> str, int encode, int64_t &v) {
   return false;
 }
 
-bool CheckAndReply(std::shared_ptr<RedisObj> obj, std::shared_ptr<RedisCmd> cmd,
-                   int type) {
+bool CheckAndReply(std::shared_ptr<RedisObj> obj,
+                   std::shared_ptr<RedisArgs> cmd, int type) {
   if (obj->type == type) {
     if (type == Type_String &&
         (obj->encode == Encode_Raw || obj->encode == Encode_Int)) {
@@ -93,12 +93,12 @@ bool CheckAndReply(std::shared_ptr<RedisObj> obj, std::shared_ptr<RedisCmd> cmd,
     }
   }
 
-  cmd->ReplyError(RedisCmd::g_reply_type_warn);
+  cmd->ReplyError(RedisArgs::g_reply_type_warn);
   return false;
 }
 
 void ReplyRedisObj(std::shared_ptr<RedisObj> obj,
-                   std::shared_ptr<RedisCmd> cmd) {
+                   std::shared_ptr<RedisArgs> cmd) {
   if (obj == nullptr) {
     cmd->ReplyNil();
   } else if (obj->type == Type_String && obj->encode == Encode_Raw) {

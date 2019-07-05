@@ -2,22 +2,18 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
-#include "net_pool.h"
-#include "redis_cmd.h"
+#include "redis_args.h"
 #include "redis_dic.h"
 #include "redis_pool.h"
+#include "rockin_server.h"
 #include "rocks_pool.h"
 #include "rocksdb/db.h"
-#include "server.h"
-
-rockin::Server* g_server;
 
 void signal_handle(uv_signal_t* handle, int signum) {
   if (signum == SIGINT) {
     LOG(INFO) << "catch signal:SIGINT";
     LOG(INFO) << "start to stop rockin...";
-    rockin::NetPool::GetInstance()->Stop();
-    g_server->Close();
+    rockin::RockinServer::Default()->Close();
     exit(0);
   }
   std::cout << "catch single:" << signum << std::endl;
@@ -42,17 +38,14 @@ int main(int argc, char** argv) {
   rockin::RocksPool::GetInstance()->Init(2, "/tmp/rocksdb");
 
   // init handle
-  rockin::RedisCmd::InitHandle();
-
-  // network thread pool
-  rockin::NetPool::GetInstance()->Init(2);
+  rockin::RedisArgs::InitHandle();
 
   // redis work thread pool
   rockin::RedisPool::GetInstance()->Init(4);
 
   // listern server
-  g_server = new rockin::Server;
-  if (g_server->Service(9000) == false) {
+  rockin::RockinServer::Default()->Init(2);
+  if (rockin::RockinServer::Default()->Service(9000) == false) {
     LOG(ERROR) << "start service fail";
     return -1;
   }

@@ -7,8 +7,8 @@ namespace rockin {
 class SyncData {
  public:
   EventLoop::LoopCallback callback;
+  std::shared_ptr<void> arg;
   uv_sem_t *sem;
-  void *arg;
 };
 
 EventLoop::EventLoop() : running_(false), queue_(0xF00000) {
@@ -31,7 +31,9 @@ void EventLoop::Start() {
 
 void EventLoop::Stop() {
   this->running_ = false;
-  this->RunInLoopAndWait([](EventLoop *et) { uv_stop(&et->loop_); });
+  this->RunInLoopAndWait(
+      [](EventLoop *et, std::shared_ptr<void> arg) { uv_stop(&et->loop_); },
+      nullptr);
 }
 
 void EventLoop::RunLoop() {
@@ -55,7 +57,7 @@ void EventLoop::RunInLoop() {
     }
 
     try {
-      sd->callback(this);
+      sd->callback(this, sd->arg);
     } catch (...) {
       LOG(ERROR) << "Catch Exception.";
     }
@@ -66,19 +68,22 @@ void EventLoop::RunInLoop() {
   }
 }
 
-void EventLoop::RunInLoopNoWait(LoopCallback callback) {
+void EventLoop::RunInLoopNoWait(LoopCallback callback,
+                                std::shared_ptr<void> arg) {
   SyncData *sd = new SyncData;
   sd->callback = callback;
   sd->sem = nullptr;
+  sd->arg = arg;
 
   while (!queue_.Push(sd))
     ;
   uv_async_send(&async_);
 }
 
-void EventLoop::RunInLoopAndWait(LoopCallback callback) {
+void EventLoop::RunInLoopAndWait(LoopCallback callback,
+                                 std::shared_ptr<void> arg) {
   if (uv_thread_self() == thread_) {
-    callback(this);
+    callback(this, arg);
     return;
   }
 
@@ -88,6 +93,7 @@ void EventLoop::RunInLoopAndWait(LoopCallback callback) {
   SyncData sd;
   sd.callback = callback;
   sd.sem = &sem;
+  sd.arg = arg;
 
   while (!queue_.Push(&sd))
     ;

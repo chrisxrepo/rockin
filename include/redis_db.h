@@ -27,7 +27,7 @@ enum EncodeType {
   Encode_Int = 2,
 };
 
-class RedisCmd;
+class RedisArgs;
 class RedisDB;
 
 struct RedisObj {
@@ -49,7 +49,7 @@ class RedisDB {
   // get if nil reply
   std::shared_ptr<RedisObj> GetReplyNil(int dbindex,
                                         std::shared_ptr<buffer_t> key,
-                                        std::shared_ptr<RedisCmd> cmd);
+                                        std::shared_ptr<RedisArgs> cmd);
 
   // set
   std::shared_ptr<RedisObj> Set(int dbindex, std::shared_ptr<buffer_t> key,
@@ -72,9 +72,9 @@ extern std::shared_ptr<buffer_t> GenString(std::shared_ptr<buffer_t> value,
 extern bool GenInt64(std::shared_ptr<buffer_t> str, int encode, int64_t &v);
 
 extern bool CheckAndReply(std::shared_ptr<RedisObj> obj,
-                          std::shared_ptr<RedisCmd> cmd, int type);
+                          std::shared_ptr<RedisArgs> cmd, int type);
 
 extern void ReplyRedisObj(std::shared_ptr<RedisObj> obj,
-                          std::shared_ptr<RedisCmd> cmd);
+                          std::shared_ptr<RedisArgs> cmd);
 
 }  // namespace rockin

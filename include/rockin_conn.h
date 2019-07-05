@@ -5,11 +5,12 @@
 #include "utils.h"
 
 namespace rockin {
-class RedisCmd;
-class Conn : public std::enable_shared_from_this<Conn> {
+class RedisArgs;
+class RockinConn : public std::enable_shared_from_this<RockinConn> {
  public:
-  Conn(uv_tcp_t *t, std::function<void(std::shared_ptr<Conn>)> close_cb);
-  ~Conn();
+  RockinConn(uv_tcp_t *t,
+             std::function<void(std::shared_ptr<RockinConn>)> close_cb);
+  ~RockinConn();
 
   bool StartRead();
   bool StopRead();
@@ -31,6 +32,6 @@ class Conn : public std::enable_shared_from_this<Conn> {
   int index_;
   uv_tcp_t *t_;
   ByteBuf buf_;
-  std::shared_ptr<RedisCmd> cmd_;
+  std::shared_ptr<RedisArgs> cmd_;
 };
 }  // namespace rockin

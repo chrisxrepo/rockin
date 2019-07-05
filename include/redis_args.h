@@ -6,12 +6,12 @@
 #include "utils.h"
 
 namespace rockin {
-class Conn;
-class RedisCmd : public std::enable_shared_from_this<RedisCmd> {
+class RockinConn;
+class RedisArgs : public std::enable_shared_from_this<RedisArgs> {
  public:
   static void InitHandle();
 
-  RedisCmd(std::shared_ptr<Conn> conn);
+  RedisArgs(std::shared_ptr<RockinConn> conn);
 
   bool Parse(ByteBuf &buf);
   void Handle();
@@ -24,7 +24,7 @@ class RedisCmd : public std::enable_shared_from_this<RedisCmd> {
   void ReplyBulk(std::shared_ptr<buffer_t> str);
   void ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values);
 
-  std::shared_ptr<Conn> conn() { return conn_.lock(); }
+  std::shared_ptr<RockinConn> conn() { return conn_.lock(); }
   std::vector<std::shared_ptr<buffer_t>> &args() { return args_; }
 
   int DbIndex();
@@ -38,7 +38,7 @@ class RedisCmd : public std::enable_shared_from_this<RedisCmd> {
   void CloseConn();
 
  private:
-  std::weak_ptr<Conn> conn_;
+  std::weak_ptr<RockinConn> conn_;
   std::vector<std::shared_ptr<buffer_t>> args_;
   int mbulk_;
 
