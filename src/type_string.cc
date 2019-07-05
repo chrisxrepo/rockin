@@ -1,16 +1,16 @@
-#include "redis_string.h"
+#include "type_string.h"
 #include <glog/logging.h>
 #include <math.h>
-#include "redis_args.h"
-#include "redis_common.h"
-#include "redis_db.h"
-#include "redis_pool.h"
+#include "cmd_args.h"
+#include "mem_db.h"
+#include "mem_saver.h"
+#include "type_common.h"
 
 namespace rockin {
 // get key
-void GetCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void GetCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -26,9 +26,9 @@ void GetCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // set key value
-void SetCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void SetCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -41,9 +41,9 @@ void SetCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // append key value
-void AppendCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void AppendCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -72,9 +72,9 @@ void AppendCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // getset key value
-void GetSetCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void GetSetCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -98,13 +98,13 @@ void GetSetCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // mget key1 ....
-void MGetCommand(std::shared_ptr<RedisArgs> cmd) {
+void MGetCommand(std::shared_ptr<CmdArgs> cmd) {
   auto &args = cmd->args();
   int cnt = args.size() - 1;
   auto rets = std::make_shared<MultiResult>(cnt);
   for (int i = 0; i < cnt; i++) {
-    std::pair<EventLoop *, RedisDB *> loop =
-        RedisPool::GetInstance()->GetDB(args[i + 1]);
+    std::pair<EventLoop *, MemDB *> loop =
+        MemSaver::Default()->GetDB(args[i + 1]);
 
     auto db = loop.second;
     loop.first->RunInLoopNoWait(
@@ -125,18 +125,18 @@ void MGetCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // mset key1 value1 ....
-void MSetCommand(std::shared_ptr<RedisArgs> cmd) {
+void MSetCommand(std::shared_ptr<CmdArgs> cmd) {
   auto &args = cmd->args();
   if (args.size() % 2 != 1) {
-    cmd->ReplyError(RedisArgs::g_reply_mset_args_err);
+    cmd->ReplyError(CmdArgs::g_reply_mset_args_err);
     return;
   }
 
   int cnt = args.size() / 2;
   auto rets = std::make_shared<MultiResult>(cnt);
   for (int i = 0; i < cnt; i++) {
-    std::pair<EventLoop *, RedisDB *> loop =
-        RedisPool::GetInstance()->GetDB(args[i * 2 + 1]);
+    std::pair<EventLoop *, MemDB *> loop =
+        MemSaver::Default()->GetDB(args[i * 2 + 1]);
 
     auto db = loop.second;
     loop.first->RunInLoopNoWait(
@@ -154,8 +154,7 @@ void MSetCommand(std::shared_ptr<RedisArgs> cmd) {
   }
 }
 
-static void IncrDecrProcess(std::shared_ptr<RedisArgs> cmd, RedisDB *db,
-                            int num) {
+static void IncrDecrProcess(std::shared_ptr<CmdArgs> cmd, MemDB *db, int num) {
   auto &args = cmd->args();
   auto obj = db->Get(cmd->DbIndex(), args[1]);
   if (obj != nullptr && !CheckAndReply(obj, cmd, Type_String)) {
@@ -169,7 +168,7 @@ static void IncrDecrProcess(std::shared_ptr<RedisArgs> cmd, RedisDB *db,
   } else {
     int64_t oldv;
     if (!GenInt64(OBJ_STRING(obj), obj->encode, oldv)) {
-      cmd->ReplyError(RedisArgs::g_reply_integer_err);
+      cmd->ReplyError(CmdArgs::g_reply_integer_err);
       return;
     }
 
@@ -185,9 +184,9 @@ static void IncrDecrProcess(std::shared_ptr<RedisArgs> cmd, RedisDB *db,
 }
 
 // incr key
-void IncrCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void IncrCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -198,9 +197,9 @@ void IncrCommand(std::shared_ptr<RedisArgs> cmd) {
 }  // namespace rockin
 
 // incrby key value
-void IncrbyCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void IncrbyCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -208,7 +207,7 @@ void IncrbyCommand(std::shared_ptr<RedisArgs> cmd) {
         int64_t tmpv;
         auto &args = cmd->args();
         if (StringToInt64(args[2]->data, args[2]->len, &tmpv) == 0) {
-          cmd->ReplyError(RedisArgs::g_reply_integer_err);
+          cmd->ReplyError(CmdArgs::g_reply_integer_err);
           return;
         }
 
@@ -218,9 +217,9 @@ void IncrbyCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // decr key
-void DecrCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void DecrCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -231,9 +230,9 @@ void DecrCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // decr key value
-void DecrbyCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void DecrbyCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -241,7 +240,7 @@ void DecrbyCommand(std::shared_ptr<RedisArgs> cmd) {
         int64_t tmpv;
         auto &args = cmd->args();
         if (StringToInt64(args[2]->data, args[2]->len, &tmpv) == 0) {
-          cmd->ReplyError(RedisArgs::g_reply_integer_err);
+          cmd->ReplyError(CmdArgs::g_reply_integer_err);
           return;
         }
 
@@ -251,14 +250,14 @@ void DecrbyCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 static bool GetBitOffset(std::shared_ptr<buffer_t> v,
-                         std::shared_ptr<RedisArgs> cmd, int64_t &offset) {
+                         std::shared_ptr<CmdArgs> cmd, int64_t &offset) {
   if (StringToInt64(v->data, v->len, &offset) != 1) {
-    cmd->ReplyError(RedisArgs::g_reply_bit_err);
+    cmd->ReplyError(CmdArgs::g_reply_bit_err);
     return false;
   }
 
   if (offset < 0 || (offset >> 3) >= 512 * 1024 * 1024) {
-    cmd->ReplyError(RedisArgs::g_reply_bit_err);
+    cmd->ReplyError(CmdArgs::g_reply_bit_err);
     return false;
   }
 
@@ -266,9 +265,9 @@ static bool GetBitOffset(std::shared_ptr<buffer_t> v,
 }
 
 // SETBIT key offset value
-void SetBitCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void SetBitCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -280,7 +279,7 @@ void SetBitCommand(std::shared_ptr<RedisArgs> cmd) {
         }
 
         if (StringToInt64(args[3]->data, args[3]->len, &on) != 1 || on & ~1) {
-          cmd->ReplyError(RedisArgs::g_reply_bit_err);
+          cmd->ReplyError(CmdArgs::g_reply_bit_err);
           return;
         }
 
@@ -319,9 +318,9 @@ void SetBitCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // GETBIT key offset
-void GetBitCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void GetBitCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -356,9 +355,9 @@ void GetBitCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // BITCOUNT key [start end]
-void BitCountCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void BitCountCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -380,7 +379,7 @@ void BitCountCommand(std::shared_ptr<RedisArgs> cmd) {
           int64_t start, end;
           if (StringToInt64(args[2]->data, args[2]->len, &start) != 1 ||
               StringToInt64(args[3]->data, args[3]->len, &end) != 1) {
-            cmd->ReplyError(RedisArgs::g_reply_integer_err);
+            cmd->ReplyError(CmdArgs::g_reply_integer_err);
             return;
           }
 
@@ -401,7 +400,7 @@ void BitCountCommand(std::shared_ptr<RedisArgs> cmd) {
                 BitCount(str_value->data + start, end - start + 1));
           }
         } else {
-          cmd->ReplyError(RedisArgs::g_reply_syntax_err);
+          cmd->ReplyError(CmdArgs::g_reply_syntax_err);
         }
       },
       nullptr);
@@ -416,9 +415,9 @@ void BitCountCommand(std::shared_ptr<RedisArgs> cmd) {
 #define BITOP_XOR 2
 #define BITOP_NOT 3
 
-void BitOpCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void BitOpCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -445,12 +444,12 @@ void BitOpCommand(std::shared_ptr<RedisArgs> cmd) {
                    (args[2]->data[2] == 't' || args[2]->data[3] == 'T')) {
           op = BITOP_NOT;
         } else {
-          cmd->ReplyError(RedisArgs::g_reply_syntax_err);
+          cmd->ReplyError(CmdArgs::g_reply_syntax_err);
           return;
         }
 
         if (op == BITOP_NOT && args.size() != 4) {
-          cmd->ReplyError(RedisArgs::g_reply_syntax_err);
+          cmd->ReplyError(CmdArgs::g_reply_syntax_err);
           return;
         }
 
@@ -505,9 +504,9 @@ void BitOpCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // BITPOS key bit [start][end]
-void BitPosCommand(std::shared_ptr<RedisArgs> cmd) {
-  std::pair<EventLoop *, RedisDB *> loop =
-      RedisPool::GetInstance()->GetDB(cmd->args()[1]);
+void BitPosCommand(std::shared_ptr<CmdArgs> cmd) {
+  std::pair<EventLoop *, MemDB *> loop =
+      MemSaver::Default()->GetDB(cmd->args()[1]);
 
   auto db = loop.second;
   loop.first->RunInLoopNoWait(
@@ -515,7 +514,7 @@ void BitPosCommand(std::shared_ptr<RedisArgs> cmd) {
         auto &args = cmd->args();
         int64_t bit = 0;
         if (StringToInt64(args[2]->data, args[2]->len, &bit) != 1 || bit & ~1) {
-          cmd->ReplyError(RedisArgs::g_reply_integer_err);
+          cmd->ReplyError(CmdArgs::g_reply_integer_err);
           return;
         }
 
@@ -533,12 +532,12 @@ void BitPosCommand(std::shared_ptr<RedisArgs> cmd) {
         int64_t start, end;
         if (args.size() == 4 || args.size() == 5) {
           if (StringToInt64(args[3]->data, args[3]->len, &start) != 1) {
-            cmd->ReplyError(RedisArgs::g_reply_integer_err);
+            cmd->ReplyError(CmdArgs::g_reply_integer_err);
             return;
           }
           if (args.size() == 5) {
             if (StringToInt64(args[4]->data, args[4]->len, &end) != 1) {
-              cmd->ReplyError(RedisArgs::g_reply_integer_err);
+              cmd->ReplyError(CmdArgs::g_reply_integer_err);
               return;
             }
             end_given = true;
@@ -554,7 +553,7 @@ void BitPosCommand(std::shared_ptr<RedisArgs> cmd) {
           start = 0;
           end = str_value->len - 1;
         } else {
-          cmd->ReplyError(RedisArgs::g_reply_syntax_err);
+          cmd->ReplyError(CmdArgs::g_reply_syntax_err);
           return;
         }
 

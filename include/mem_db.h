@@ -27,8 +27,8 @@ enum EncodeType {
   Encode_Int = 2,
 };
 
-class RedisArgs;
-class RedisDB;
+class CmdArgs;
+class MemDB;
 
 struct RedisObj {
   unsigned char type;
@@ -38,10 +38,10 @@ struct RedisObj {
   std::shared_ptr<RedisObj> next;
 };
 
-class RedisDB {
+class MemDB {
  public:
-  RedisDB();
-  ~RedisDB();
+  MemDB();
+  ~MemDB();
 
   // get
   std::shared_ptr<RedisObj> Get(int dbindex, std::shared_ptr<buffer_t> key);
@@ -49,7 +49,7 @@ class RedisDB {
   // get if nil reply
   std::shared_ptr<RedisObj> GetReplyNil(int dbindex,
                                         std::shared_ptr<buffer_t> key,
-                                        std::shared_ptr<RedisArgs> cmd);
+                                        std::shared_ptr<CmdArgs> cmd);
 
   // set
   std::shared_ptr<RedisObj> Set(int dbindex, std::shared_ptr<buffer_t> key,
@@ -72,9 +72,9 @@ extern std::shared_ptr<buffer_t> GenString(std::shared_ptr<buffer_t> value,
 extern bool GenInt64(std::shared_ptr<buffer_t> str, int encode, int64_t &v);
 
 extern bool CheckAndReply(std::shared_ptr<RedisObj> obj,
-                          std::shared_ptr<RedisArgs> cmd, int type);
+                          std::shared_ptr<CmdArgs> cmd, int type);
 
 extern void ReplyRedisObj(std::shared_ptr<RedisObj> obj,
-                          std::shared_ptr<RedisArgs> cmd);
+                          std::shared_ptr<CmdArgs> cmd);
 
 }  // namespace rockin

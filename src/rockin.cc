@@ -2,9 +2,10 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
-#include "redis_args.h"
+#include "cmd_args.h"
+#include "cmd_table.h"
+#include "mem_saver.h"
 #include "redis_dic.h"
-#include "redis_pool.h"
 #include "rockin_server.h"
 #include "rocks_pool.h"
 #include "rocksdb/db.h"
@@ -38,10 +39,11 @@ int main(int argc, char** argv) {
   rockin::RocksPool::GetInstance()->Init(2, "/tmp/rocksdb");
 
   // init handle
-  rockin::RedisArgs::InitHandle();
+  rockin::CmdArgs::InitHandle();
+  rockin::CmdTable::Default()->Init();
 
   // redis work thread pool
-  rockin::RedisPool::GetInstance()->Init(4);
+  rockin::MemSaver::Default()->Init(4);
 
   // listern server
   rockin::RockinServer::Default()->Init(2);

@@ -1,27 +1,35 @@
-#include "redis_common.h"
+#include "type_common.h"
 #include <glog/logging.h>
 #include <jemalloc/jemalloc.h>
-#include "redis_args.h"
-#include "redis_db.h"
-#include "redis_pool.h"
+#include "cmd_args.h"
+#include "mem_db.h"
+#include "mem_saver.h"
 #include "rockin_conn.h"
 
 namespace rockin {
 
-// command
-void CommandCommand(std::shared_ptr<RedisArgs> cmd) {
-  cmd->ReplyOk();
-  return;
+void CommandCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                    std::shared_ptr<RockinConn> conn) {
+  conn->ReplyOk();
 }
 
+void PingCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                 std::shared_ptr<RockinConn> conn) {
+  static std::shared_ptr<buffer_t> g_reply_pong = make_buffer("PONG");
+  conn->ReplyString(g_reply_pong);
+}
+
+// command
+void CommandCommand(std::shared_ptr<CmdArgs> cmd) { cmd->ReplyOk(); }
+
 // ping
-void PingCommand(std::shared_ptr<RedisArgs> cmd) {
+void PingCommand(std::shared_ptr<CmdArgs> cmd) {
   static std::shared_ptr<buffer_t> g_reply_pong = make_buffer("PONG");
   cmd->ReplyString(g_reply_pong);
   return;
 }
 
-void InfoCommand(std::shared_ptr<RedisArgs> cmd) {
+void InfoCommand(std::shared_ptr<CmdArgs> cmd) {
   size_t size = malloc_usable_size(NULL);
   std::cout << "Mem:" << size << std::endl;
   malloc_stats_print(NULL, NULL, NULL);
@@ -30,14 +38,14 @@ void InfoCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // del key1 ...
-void DelCommand(std::shared_ptr<RedisArgs> cmd) {
+void DelCommand(std::shared_ptr<CmdArgs> cmd) {
   int cnt = cmd->args().size() - 1;
   auto rets = std::make_shared<MultiResult>(cnt);
   for (int i = 0; i < cnt; i++) {
-    std::pair<EventLoop *, RedisDB *> loop =
-        RedisPool::GetInstance()->GetDB(cmd->args()[i + 1]);
+    std::pair<EventLoop *, MemDB *> loop =
+        MemSaver::Default()->GetDB(cmd->args()[i + 1]);
 
-    RedisDB *db = loop.second;
+    MemDB *db = loop.second;
     loop.first->RunInLoopNoWait(
         [i, cmd, rets, db](EventLoop *et, std::shared_ptr<void> arg) {
           if (db->Delete(cmd->DbIndex(), cmd->args()[i + 1])) {
@@ -54,16 +62,16 @@ void DelCommand(std::shared_ptr<RedisArgs> cmd) {
 }
 
 // select dbnum
-void SelectCommand(std::shared_ptr<RedisArgs> cmd) {
+void SelectCommand(std::shared_ptr<CmdArgs> cmd) {
   int64_t dbnum = 0;
   auto &args = cmd->args();
   if (StringToInt64(args[1]->data, args[1]->len, &dbnum) != 1) {
-    cmd->ReplyError(RedisArgs::g_reply_dbindex_invalid);
+    cmd->ReplyError(CmdArgs::g_reply_dbindex_invalid);
     return;
   }
 
   if (dbnum < 0 || dbnum >= DBNum) {
-    cmd->ReplyError(RedisArgs::g_reply_dbindex_range);
+    cmd->ReplyError(CmdArgs::g_reply_dbindex_range);
     return;
   }
 
@@ -77,11 +85,11 @@ void SelectCommand(std::shared_ptr<RedisArgs> cmd) {
   cmd->ReplyOk();
 }
 
-void FlushDBCommand(std::shared_ptr<RedisArgs> cmd) {
-  auto loops = RedisPool::GetInstance()->GetDBs();
+void FlushDBCommand(std::shared_ptr<CmdArgs> cmd) {
+  auto loops = MemSaver::Default()->GetDBs();
   auto rets = std::make_shared<MultiResult>(loops.size());
   for (int i = 0; i < loops.size(); i++) {
-    RedisDB *db = loops[i].second;
+    MemDB *db = loops[i].second;
     loops[i].first->RunInLoopNoWait(
         [cmd, db, rets](EventLoop *et, std::shared_ptr<void> arg) {
           db->FlushDB(cmd->DbIndex());
@@ -95,11 +103,11 @@ void FlushDBCommand(std::shared_ptr<RedisArgs> cmd) {
   }
 }
 
-void FlushAllCommand(std::shared_ptr<RedisArgs> cmd) {
-  auto loops = RedisPool::GetInstance()->GetDBs();
+void FlushAllCommand(std::shared_ptr<CmdArgs> cmd) {
+  auto loops = MemSaver::Default()->GetDBs();
   auto rets = std::make_shared<MultiResult>(loops.size());
   for (int i = 0; i < loops.size(); i++) {
-    RedisDB *db = loops[i].second;
+    MemDB *db = loops[i].second;
     loops[i].first->RunInLoopNoWait(
         [cmd, db, rets](EventLoop *et, std::shared_ptr<void> arg) {
           for (int i = 0; i < DBNum; i++) {

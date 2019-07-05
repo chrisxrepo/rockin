@@ -1,16 +1,16 @@
-#include "redis_args.h"
+#include "cmd_args.h"
 #include <glog/logging.h>
 #include <algorithm>
 #include <sstream>
-#include "redis_common.h"
-#include "redis_string.h"
 #include "rockin_conn.h"
+#include "type_common.h"
+#include "type_string.h"
 #include "utils.h"
 
 namespace rockin {
 std::string _emptyStr = "";
 
-typedef std::function<void(std::shared_ptr<RedisArgs>)> HandleFunc;
+typedef std::function<void(std::shared_ptr<CmdArgs>)> HandleFunc;
 struct redisHandle {
   std::string cmd;
   HandleFunc func;
@@ -26,8 +26,8 @@ static std::unordered_map<std::string, redisHandle> g_handle_map;
 #define ADD_HANDLE(cmd, handle, arity) \
   g_handle_map[cmd] = redisHandle(cmd, FUN_STATIC_BIND1(handle), arity)
 
-void RedisArgs::InitHandle() {
-  ADD_HANDLE("ping", PingCommand, -1);
+void CmdArgs::InitHandle() {
+  /* ADD_HANDLE("ping", PingCommand, -1);
   ADD_HANDLE("info", InfoCommand, -1);
   ADD_HANDLE("command", CommandCommand, -1);
   ADD_HANDLE("select", SelectCommand, 2);
@@ -49,18 +49,18 @@ void RedisArgs::InitHandle() {
   ADD_HANDLE("bitcount", BitCountCommand, -2);
   ADD_HANDLE("bitop", BitOpCommand, -4);
   ADD_HANDLE("bitpos", BitPosCommand, -3);
+  */
 }
 
-RedisArgs::RedisArgs(std::shared_ptr<RockinConn> conn)
-    : conn_(conn), mbulk_(-1) {}
+CmdArgs::CmdArgs() : mbulk_(-1) {}
 
-bool RedisArgs::Parse(ByteBuf &buf) {
+std::shared_ptr<buffer_t> CmdArgs::Parse(ByteBuf &buf) {
   if (args_.size() == mbulk_) {
-    return true;
+    return nullptr;
   }
 
   if (buf.readable() == 0) {
-    return false;
+    return nullptr;
   }
 
   char *ptr = buf.readptr();
@@ -70,10 +70,15 @@ bool RedisArgs::Parse(ByteBuf &buf) {
     return ParseInlineCommand(buf);
   }
 
-  return false;
+  return nullptr;
 }
 
-void RedisArgs::Handle() {
+bool CmdArgs::OK() {
+  //....
+  return args_.size() == mbulk_;
+}
+
+void CmdArgs::Handle() {
   if (args_.size() != mbulk_) {
     return;
   }
@@ -100,12 +105,12 @@ void RedisArgs::Handle() {
   iter->second.func(shared_from_this());
 }
 
-bool RedisArgs::ParseMultiCommand(ByteBuf &buf) {
+std::shared_ptr<buffer_t> CmdArgs::ParseMultiCommand(ByteBuf &buf) {
   char *ptr = buf.readptr();
   if (*ptr == '*') {
     char *end = Strchr2(ptr, buf.readable(), '\r', '\n');
     if (end == nullptr) {
-      return false;
+      return nullptr;
     }
 
     mbulk_ = (int)StringToInt64(ptr + 1, end - ptr - 1);
@@ -113,9 +118,7 @@ bool RedisArgs::ParseMultiCommand(ByteBuf &buf) {
       std::ostringstream build;
       build << "ERR Protocol error: invalid multi bulk length:"
             << std::string(ptr + 1, end - ptr - 1);
-      ReplyError(make_buffer(build.str()));
-      CloseConn();
-      return false;
+      return make_buffer(build.str());
     }
 
     buf.move_readptr(end - ptr + 2);
@@ -125,15 +128,13 @@ bool RedisArgs::ParseMultiCommand(ByteBuf &buf) {
     char *nptr = buf.readptr();
     char *end = Strchr2(nptr, buf.readable(), '\r', '\n');
     if (end == nullptr) {
-      return false;
+      return nullptr;
     }
 
     if (*nptr != '$') {
       std::ostringstream build;
       build << "ERR Protocol error: expected '$', got '" << *nptr << "'";
-      ReplyError(make_buffer(build.str()));
-      CloseConn();
-      return false;
+      return make_buffer(build.str());
     }
 
     int bulk = (int)StringToInt64(nptr + 1, end - nptr - 1);
@@ -141,36 +142,32 @@ bool RedisArgs::ParseMultiCommand(ByteBuf &buf) {
       std::ostringstream build;
       build << "ERR Protocol error: invalid bulk length:"
             << std::string(nptr + 1, end - nptr - 1);
-      ReplyError(make_buffer(build.str()));
-      CloseConn();
-      return false;
+      return make_buffer(build.str());
     }
 
     char *dptr = end + 2;
     if (dptr - nptr + bulk + 2 > buf.readable()) {
-      return false;
+      return nullptr;
     }
 
     if (*(dptr + bulk) != '\r' || *(dptr + bulk + 1) != '\n') {
       std::ostringstream build;
       build << "ERR Protocol error: invalid bulk length";
-      ReplyError(make_buffer(build.str()));
-      CloseConn();
-      return false;
+      return make_buffer(build.str());
     }
 
     args_.push_back(make_buffer(dptr, bulk));
     buf.move_readptr(dptr - nptr + bulk + 2);
   }
 
-  return true;
+  return nullptr;
 }
 
-bool RedisArgs::ParseInlineCommand(ByteBuf &buf) {
+std::shared_ptr<buffer_t> CmdArgs::ParseInlineCommand(ByteBuf &buf) {
   char *ptr = buf.readptr();
   char *end = Strchr2(ptr, buf.readable(), '\r', '\n');
   if (end == nullptr) {
-    return false;
+    return nullptr;
   }
 
   while (ptr < end) {
@@ -246,10 +243,10 @@ bool RedisArgs::ParseInlineCommand(ByteBuf &buf) {
 
   mbulk_ = args_.size();
   buf.move_readptr(end - buf.readptr() + 2);
-  return true;
+  return nullptr;
 }
 
-void RedisArgs::CloseConn() {
+void CmdArgs::CloseConn() {
   auto conn = conn_.lock();
   if (conn != nullptr) {
     conn->Close();
@@ -257,32 +254,32 @@ void RedisArgs::CloseConn() {
 }
 
 /////////////////////////////////////////////////////////////////
-std::shared_ptr<buffer_t> RedisArgs::g_nil = make_buffer("$-1\r\n");
-std::shared_ptr<buffer_t> RedisArgs::g_begin_err = make_buffer("-");
-std::shared_ptr<buffer_t> RedisArgs::g_begin_str = make_buffer("+");
-std::shared_ptr<buffer_t> RedisArgs::g_begin_int = make_buffer(":");
-std::shared_ptr<buffer_t> RedisArgs::g_begin_array = make_buffer("*");
-std::shared_ptr<buffer_t> RedisArgs::g_begin_bulk = make_buffer("$");
-std::shared_ptr<buffer_t> RedisArgs::g_proto_split = make_buffer("\r\n");
-std::shared_ptr<buffer_t> RedisArgs::g_reply_ok = make_buffer("+OK\r\n");
-std::shared_ptr<buffer_t> RedisArgs::g_reply_type_warn = make_buffer(
+std::shared_ptr<buffer_t> CmdArgs::g_nil = make_buffer("$-1\r\n");
+std::shared_ptr<buffer_t> CmdArgs::g_begin_err = make_buffer("-");
+std::shared_ptr<buffer_t> CmdArgs::g_begin_str = make_buffer("+");
+std::shared_ptr<buffer_t> CmdArgs::g_begin_int = make_buffer(":");
+std::shared_ptr<buffer_t> CmdArgs::g_begin_array = make_buffer("*");
+std::shared_ptr<buffer_t> CmdArgs::g_begin_bulk = make_buffer("$");
+std::shared_ptr<buffer_t> CmdArgs::g_proto_split = make_buffer("\r\n");
+std::shared_ptr<buffer_t> CmdArgs::g_reply_ok = make_buffer("+OK\r\n");
+std::shared_ptr<buffer_t> CmdArgs::g_reply_type_warn = make_buffer(
     "WRONGTYPE Operation against a key holding the wrong kind of value");
-std::shared_ptr<buffer_t> RedisArgs::g_reply_dbindex_invalid =
+std::shared_ptr<buffer_t> CmdArgs::g_reply_dbindex_invalid =
     make_buffer("ERR invalid DB index");
-std::shared_ptr<buffer_t> RedisArgs::g_reply_dbindex_range =
+std::shared_ptr<buffer_t> CmdArgs::g_reply_dbindex_range =
     make_buffer("ERR DB index is out of range");
-std::shared_ptr<buffer_t> RedisArgs::g_reply_syntax_err =
+std::shared_ptr<buffer_t> CmdArgs::g_reply_syntax_err =
     make_buffer("ERR syntax error");
-std::shared_ptr<buffer_t> RedisArgs::g_reply_mset_args_err =
+std::shared_ptr<buffer_t> CmdArgs::g_reply_mset_args_err =
     make_buffer("ERR wrong number of arguments for MSET");
-std::shared_ptr<buffer_t> RedisArgs::g_reply_integer_err =
+std::shared_ptr<buffer_t> CmdArgs::g_reply_integer_err =
     make_buffer("ERR value is not an integer or out of range");
-std::shared_ptr<buffer_t> RedisArgs::g_reply_nan_err =
+std::shared_ptr<buffer_t> CmdArgs::g_reply_nan_err =
     make_buffer("ERR would produce NaN or Infinity");
-std::shared_ptr<buffer_t> RedisArgs::g_reply_bit_err =
+std::shared_ptr<buffer_t> CmdArgs::g_reply_bit_err =
     make_buffer("bit offset is not an integer or out of range");
 
-void RedisArgs::ReplyNil() {
+void CmdArgs::ReplyNil() {
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
@@ -293,7 +290,7 @@ void RedisArgs::ReplyNil() {
   conn->WriteData(std::move(datas));
 }
 
-void RedisArgs::ReplyOk() {
+void CmdArgs::ReplyOk() {
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
@@ -304,7 +301,7 @@ void RedisArgs::ReplyOk() {
   conn->WriteData(std::move(datas));
 }
 
-void RedisArgs::ReplyError(std::shared_ptr<buffer_t> err) {
+void CmdArgs::ReplyError(std::shared_ptr<buffer_t> err) {
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
@@ -317,7 +314,7 @@ void RedisArgs::ReplyError(std::shared_ptr<buffer_t> err) {
   conn->WriteData(std::move(datas));
 }
 
-void RedisArgs::ReplyString(std::shared_ptr<buffer_t> str) {
+void CmdArgs::ReplyString(std::shared_ptr<buffer_t> str) {
   if (str == nullptr) {
     ReplyNil();
     return;
@@ -335,7 +332,7 @@ void RedisArgs::ReplyString(std::shared_ptr<buffer_t> str) {
   conn->WriteData(std::move(datas));
 }
 
-void RedisArgs::ReplyInteger(int64_t num) {
+void CmdArgs::ReplyInteger(int64_t num) {
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
@@ -348,7 +345,7 @@ void RedisArgs::ReplyInteger(int64_t num) {
   conn->WriteData(std::move(datas));
 }
 
-void RedisArgs::ReplyBulk(std::shared_ptr<buffer_t> str) {
+void CmdArgs::ReplyBulk(std::shared_ptr<buffer_t> str) {
   if (str == nullptr) {
     ReplyNil();
     return;
@@ -368,7 +365,7 @@ void RedisArgs::ReplyBulk(std::shared_ptr<buffer_t> str) {
   conn->WriteData(std::move(datas));
 }
 
-void RedisArgs::ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values) {
+void CmdArgs::ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values) {
   auto conn = conn_.lock();
   if (conn == nullptr) {
     return;
@@ -392,12 +389,12 @@ void RedisArgs::ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values) {
   conn->WriteData(std::move(datas));
 }
 
-int RedisArgs::DbIndex() {
+int CmdArgs::DbIndex() {
   auto conn = conn_.lock();
   return conn == nullptr ? 0 : conn->index();
 }
 
-std::string RedisArgs::ToString() {
+std::string CmdArgs::ToString() {
   std::ostringstream build;
   for (int i = 0; i < args_.size(); ++i) {
     build << std::string(args_[i]->data, args_[i]->len) << " ";

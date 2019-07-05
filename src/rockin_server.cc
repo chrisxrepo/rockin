@@ -1,6 +1,7 @@
 #include "rockin_server.h"
 #include <glog/logging.h>
 #include <iostream>
+#include <mutex>
 #include <thread>
 #include "event_loop.h"
 #include "rockin_conn.h"

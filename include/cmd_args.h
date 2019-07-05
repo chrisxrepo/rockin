@@ -7,13 +7,15 @@
 
 namespace rockin {
 class RockinConn;
-class RedisArgs : public std::enable_shared_from_this<RedisArgs> {
+class CmdArgs : public std::enable_shared_from_this<CmdArgs> {
  public:
   static void InitHandle();
 
-  RedisArgs(std::shared_ptr<RockinConn> conn);
+  CmdArgs();
 
-  bool Parse(ByteBuf &buf);
+  std::shared_ptr<buffer_t> Parse(ByteBuf &buf);
+  bool OK();
+
   void Handle();
 
   void ReplyNil();
@@ -31,8 +33,8 @@ class RedisArgs : public std::enable_shared_from_this<RedisArgs> {
   std::string ToString();
 
  private:
-  bool ParseMultiCommand(ByteBuf &buf);
-  bool ParseInlineCommand(ByteBuf &buf);
+  std::shared_ptr<buffer_t> ParseMultiCommand(ByteBuf &buf);
+  std::shared_ptr<buffer_t> ParseInlineCommand(ByteBuf &buf);
 
   // close client conn
   void CloseConn();

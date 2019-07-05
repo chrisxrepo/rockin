@@ -1,7 +1,8 @@
 #include "rockin_conn.h"
 #include <glog/logging.h>
+#include "cmd_args.h"
+#include "cmd_table.h"
 #include "event_loop.h"
-#include "redis_args.h"
 
 namespace rockin {
 class _ConnData {
@@ -194,24 +195,132 @@ void RockinConn::OnRead(ssize_t nread, const uv_buf_t *buf) {
   }
 
   buf_.move_writeptr(nread);
-  if (cmd_ == nullptr) {
-    cmd_ = std::make_shared<RedisArgs>(shared_from_this());
-  }
 
-  bool ret = cmd_->Parse(buf_);
-  if (ret == false || cmd_->args().size() == 0) {
+  while (true) {
+    if (cmd_args_ == nullptr) {
+      cmd_args_ = std::make_shared<CmdArgs>();
+    }
+
+    auto errstr = cmd_args_->Parse(buf_);
+    if (errstr != nullptr) {
+      return ReplyErrorAndClose(errstr);
+    }
+
+    if (cmd_args_->OK() == false) {
+      break;
+    }
+
+    auto &args = cmd_args_->args();
+    if (args[0]->len == 4 && args[0]->data[0] == 'q' &&
+        args[0]->data[1] == 'u' && args[0]->data[2] == 'i' &&
+        args[0]->data[3] == 't') {
+      return ReplyErrorAndClose(errstr);
+    }
+
+    CmdTable::Default()->HandeCmd(shared_from_this(), cmd_args_);
+    cmd_args_.reset();
+  }
+}
+
+//////////////////////////////////////////////////////
+
+void RockinConn::ReplyNil() {
+  static std::shared_ptr<buffer_t> g_nil = make_buffer("$-1\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_nil);
+  WriteData(std::move(datas));
+}
+
+void RockinConn::ReplyOk() {
+  static std::shared_ptr<buffer_t> g_reply_ok = make_buffer("+OK\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_reply_ok);
+  WriteData(std::move(datas));
+}
+
+void RockinConn::ReplyError(std::shared_ptr<buffer_t> err) {
+  static std::shared_ptr<buffer_t> g_begin_err = make_buffer("-");
+  static std::shared_ptr<buffer_t> g_proto_split = make_buffer("\r\n");
+
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_err);
+  datas.push_back(err);
+  datas.push_back(g_proto_split);
+  WriteData(std::move(datas));
+}
+
+void RockinConn::ReplyErrorAndClose(std::shared_ptr<buffer_t> err) {
+  ReplyError(err);
+  Close();
+}
+
+void RockinConn::ReplyString(std::shared_ptr<buffer_t> str) {
+  if (str == nullptr) {
+    ReplyNil();
     return;
   }
 
-  auto &args = cmd_->args();
-  if (args[0]->len == 4 && args[0]->data[0] == 'q' && args[0]->data[1] == 'u' &&
-      args[0]->data[2] == 'i' && args[0]->data[3] == 't') {
-    cmd_->ReplyOk();
-    return Close();
+  static std::shared_ptr<buffer_t> g_begin_str = make_buffer("+");
+  static std::shared_ptr<buffer_t> g_proto_split = make_buffer("\r\n");
+
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_str);
+  datas.push_back(str);
+  datas.push_back(g_proto_split);
+  WriteData(std::move(datas));
+}
+
+void RockinConn::ReplyInteger(int64_t num) {
+  static std::shared_ptr<buffer_t> g_begin_int = make_buffer(":");
+  static std::shared_ptr<buffer_t> g_proto_split = make_buffer("\r\n");
+
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_int);
+  datas.push_back(make_buffer(Int64ToString(num)));
+  datas.push_back(g_proto_split);
+  WriteData(std::move(datas));
+}
+
+void RockinConn::ReplyBulk(std::shared_ptr<buffer_t> str) {
+  if (str == nullptr) {
+    ReplyNil();
+    return;
   }
 
-  cmd_->Handle();
-  cmd_.reset();
+  static std::shared_ptr<buffer_t> g_begin_bulk = make_buffer("$");
+  static std::shared_ptr<buffer_t> g_proto_split = make_buffer("\r\n");
+
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_bulk);
+  datas.push_back(make_buffer(Int64ToString(str->len)));
+  datas.push_back(g_proto_split);
+  datas.push_back(str);
+  datas.push_back(g_proto_split);
+  WriteData(std::move(datas));
+}
+
+void RockinConn::ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values) {
+  static std::shared_ptr<buffer_t> g_begin_array = make_buffer("*");
+  static std::shared_ptr<buffer_t> g_begin_bulk = make_buffer("$");
+  static std::shared_ptr<buffer_t> g_proto_split = make_buffer("\r\n");
+  static std::shared_ptr<buffer_t> g_nil = make_buffer("$-1\r\n");
+
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_begin_array);
+  datas.push_back(make_buffer(Int64ToString(values.size())));
+  datas.push_back(g_proto_split);
+  for (size_t i = 0; i < values.size(); i++) {
+    if (values[i] == nullptr) {
+      datas.push_back(g_nil);
+    } else {
+      datas.push_back(g_begin_bulk);
+      datas.push_back(make_buffer(Int64ToString(values[i]->len)));
+      datas.push_back(g_proto_split);
+      datas.push_back(values[i]);
+      datas.push_back(g_proto_split);
+    }
+  }
+  WriteData(std::move(datas));
 }
 
 }  // namespace rockin

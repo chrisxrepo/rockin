@@ -1,27 +1,27 @@
-#include "redis_db.h"
-#include "redis_args.h"
-#include "redis_common.h"
-#include "redis_string.h"
+#include "mem_db.h"
+#include "cmd_args.h"
+#include "type_common.h"
+#include "type_string.h"
 
 namespace rockin {
 
-RedisDB::RedisDB() {
+MemDB::MemDB() {
   for (int i = 0; i < DBNum; i++) {
     dics_.push_back(std::make_shared<RedisDic<RedisObj>>());
   }
 }
 
-RedisDB::~RedisDB() {}
+MemDB::~MemDB() {}
 
-std::shared_ptr<RedisObj> RedisDB::Get(int dbindex,
-                                       std::shared_ptr<buffer_t> key) {
+std::shared_ptr<RedisObj> MemDB::Get(int dbindex,
+                                     std::shared_ptr<buffer_t> key) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
   return dic->Get(key);
 }
 
-std::shared_ptr<RedisObj> RedisDB::GetReplyNil(int dbindex,
-                                               std::shared_ptr<buffer_t> key,
-                                               std::shared_ptr<RedisArgs> cmd) {
+std::shared_ptr<RedisObj> MemDB::GetReplyNil(int dbindex,
+                                             std::shared_ptr<buffer_t> key,
+                                             std::shared_ptr<CmdArgs> cmd) {
   auto obj = Get(dbindex, key);
   if (obj == nullptr) {
     cmd->ReplyNil();
@@ -31,11 +31,9 @@ std::shared_ptr<RedisObj> RedisDB::GetReplyNil(int dbindex,
   return obj;
 }
 
-std::shared_ptr<RedisObj> RedisDB::Set(int dbindex,
-                                       std::shared_ptr<buffer_t> key,
-                                       std::shared_ptr<void> value,
-                                       unsigned char type,
-                                       unsigned char encode) {
+std::shared_ptr<RedisObj> MemDB::Set(int dbindex, std::shared_ptr<buffer_t> key,
+                                     std::shared_ptr<void> value,
+                                     unsigned char type, unsigned char encode) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
   auto obj = dic->Get(key);
   if (obj == nullptr) {
@@ -50,12 +48,12 @@ std::shared_ptr<RedisObj> RedisDB::Set(int dbindex,
 }
 
 // delete by key
-bool RedisDB::Delete(int dbindex, std::shared_ptr<buffer_t> key) {
+bool MemDB::Delete(int dbindex, std::shared_ptr<buffer_t> key) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
   return dic->Delete(key);
 }
 
-void RedisDB::FlushDB(int dbindex) {
+void MemDB::FlushDB(int dbindex) {
   if (dbindex < 0 || dbindex >= DBNum) {
     return;
   }
@@ -84,8 +82,8 @@ bool GenInt64(std::shared_ptr<buffer_t> str, int encode, int64_t &v) {
   return false;
 }
 
-bool CheckAndReply(std::shared_ptr<RedisObj> obj,
-                   std::shared_ptr<RedisArgs> cmd, int type) {
+bool CheckAndReply(std::shared_ptr<RedisObj> obj, std::shared_ptr<CmdArgs> cmd,
+                   int type) {
   if (obj->type == type) {
     if (type == Type_String &&
         (obj->encode == Encode_Raw || obj->encode == Encode_Int)) {
@@ -93,12 +91,12 @@ bool CheckAndReply(std::shared_ptr<RedisObj> obj,
     }
   }
 
-  cmd->ReplyError(RedisArgs::g_reply_type_warn);
+  cmd->ReplyError(CmdArgs::g_reply_type_warn);
   return false;
 }
 
 void ReplyRedisObj(std::shared_ptr<RedisObj> obj,
-                   std::shared_ptr<RedisArgs> cmd) {
+                   std::shared_ptr<CmdArgs> cmd) {
   if (obj == nullptr) {
     cmd->ReplyNil();
   } else if (obj->type == Type_String && obj->encode == Encode_Raw) {

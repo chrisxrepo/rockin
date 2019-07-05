@@ -3,8 +3,8 @@
 #include <glog/logging.h>
 #include <rocksdb/table.h>
 #include "compact_filter.h"
-#include "redis_common.h"
 #include "rocksdb/filter_policy.h"
+#include "type_common.h"
 #include "utils.h"
 
 namespace rockin {

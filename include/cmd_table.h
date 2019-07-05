@@ -1,16 +1,31 @@
-#pragma
+#pragma once
 #include <iostream>
+#include <memory>
 #include <unordered_map>
 
 namespace rockin {
+class CmdArgs;
+class RockinConn;
+
+struct CmdInfo {
+  std::string name;
+  int arity;
+
+  CmdInfo() : arity(0) {}
+  CmdInfo(std::string name_, int arity_) : name(name_), arity(arity_) {}
+};
+
 class Cmd {
  public:
-  virtual void Do() = 0;
+  Cmd(CmdInfo info) : info_(info) {}
 
-  const std::string &name() { return name_; }
+  virtual void Do(std::shared_ptr<CmdArgs> cmd_args,
+                  std::shared_ptr<RockinConn> conn) = 0;
+
+  const CmdInfo &info() { return info_; }
 
  private:
-  std::string name_;
+  CmdInfo info_;
 };
 
 class CmdTable {
@@ -18,9 +33,11 @@ class CmdTable {
   static CmdTable *Default();
 
   void Init();
+  void HandeCmd(std::shared_ptr<RockinConn> conn,
+                std::shared_ptr<CmdArgs> args);
 
  private:
-  std::unordered_map<std::string, Cmd *> cmd_table_;
+  std::unordered_map<std::string, std::shared_ptr<Cmd>> cmd_table_;
 };
 
 }  // namespace rockin
