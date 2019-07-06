@@ -19,107 +19,94 @@ void PingCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
   conn->ReplyString(g_reply_pong);
 }
 
-// command
-void CommandCommand(std::shared_ptr<CmdArgs> cmd) { cmd->ReplyOk(); }
-
-// ping
-void PingCommand(std::shared_ptr<CmdArgs> cmd) {
-  static std::shared_ptr<buffer_t> g_reply_pong = make_buffer("PONG");
-  cmd->ReplyString(g_reply_pong);
-  return;
+void InfoCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                 std::shared_ptr<RockinConn> conn) {
+  //....
+  conn->ReplyOk();
 }
 
-void InfoCommand(std::shared_ptr<CmdArgs> cmd) {
-  size_t size = malloc_usable_size(NULL);
-  std::cout << "Mem:" << size << std::endl;
-  malloc_stats_print(NULL, NULL, NULL);
-
-  cmd->ReplyOk();
-}
-
-// del key1 ...
-void DelCommand(std::shared_ptr<CmdArgs> cmd) {
-  int cnt = cmd->args().size() - 1;
+void DelCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                std::shared_ptr<RockinConn> conn) {
+  int cnt = cmd_args->args().size() - 1;
   auto rets = std::make_shared<MultiResult>(cnt);
-  for (int i = 0; i < cnt; i++) {
-    std::pair<EventLoop *, MemDB *> loop =
-        MemSaver::Default()->GetDB(cmd->args()[i + 1]);
 
-    MemDB *db = loop.second;
-    loop.first->RunInLoopNoWait(
-        [i, cmd, rets, db](EventLoop *et, std::shared_ptr<void> arg) {
-          if (db->Delete(cmd->DbIndex(), cmd->args()[i + 1])) {
+  for (int i = 0; i < cnt; i++) {
+    MemSaver::Default()->DoCmd(
+        cmd_args->args()[i + 1],
+        [cmd_args, conn, rets, i](EventLoop *lt, std::shared_ptr<void> arg) {
+          auto db = std::static_pointer_cast<MemDB>(arg);
+          if (db->Delete(conn->index(), cmd_args->args()[i + 1])) {
             rets->int_value.fetch_add(1);
           }
 
           rets->cnt--;
           if (rets->cnt.load() == 0) {
-            cmd->ReplyInteger(rets->int_value.load());
+            conn->ReplyArray(rets->str_values);
           }
-        },
-        nullptr);
+        });
   }
 }
 
-// select dbnum
-void SelectCommand(std::shared_ptr<CmdArgs> cmd) {
+void SelectCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                   std::shared_ptr<RockinConn> conn) {
   int64_t dbnum = 0;
-  auto &args = cmd->args();
+  auto &args = cmd_args->args();
+  static std::shared_ptr<buffer_t> g_reply_dbindex_invalid =
+      make_buffer("ERR invalid DB index");
+  static std::shared_ptr<buffer_t> g_reply_dbindex_range =
+      make_buffer("ERR DB index is out of range");
+
   if (StringToInt64(args[1]->data, args[1]->len, &dbnum) != 1) {
-    cmd->ReplyError(CmdArgs::g_reply_dbindex_invalid);
+    conn->ReplyError(g_reply_dbindex_invalid);
     return;
   }
 
   if (dbnum < 0 || dbnum >= DBNum) {
-    cmd->ReplyError(CmdArgs::g_reply_dbindex_range);
-    return;
-  }
-
-  auto conn = cmd->conn();
-  if (conn == nullptr) {
-    cmd->ReplyError(make_buffer("Err conn is nullptr"));
+    conn->ReplyError(g_reply_dbindex_range);
     return;
   }
 
   conn->set_index(dbnum);
-  cmd->ReplyOk();
+  conn->ReplyOk();
 }
 
-void FlushDBCommand(std::shared_ptr<CmdArgs> cmd) {
-  auto loops = MemSaver::Default()->GetDBs();
-  auto rets = std::make_shared<MultiResult>(loops.size());
-  for (int i = 0; i < loops.size(); i++) {
-    MemDB *db = loops[i].second;
-    loops[i].first->RunInLoopNoWait(
-        [cmd, db, rets](EventLoop *et, std::shared_ptr<void> arg) {
-          db->FlushDB(cmd->DbIndex());
+void FlushDBCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                    std::shared_ptr<RockinConn> conn) {
+  const auto &dbs = MemSaver::Default()->dbs();
+  auto rets = std::make_shared<MultiResult>(dbs.size());
+  for (auto iter = dbs.begin(); iter != dbs.end(); ++iter) {
+    iter->first->RunInLoopNoWait(
+        [cmd_args, conn, rets](EventLoop *lt, std::shared_ptr<void> arg) {
+          auto db = std::static_pointer_cast<MemDB>(arg);
+          db->FlushDB(conn->index());
 
           rets->cnt--;
           if (rets->cnt.load() == 0) {
-            cmd->ReplyOk();
+            conn->ReplyOk();
           }
         },
-        nullptr);
+        iter->second);
   }
 }
 
-void FlushAllCommand(std::shared_ptr<CmdArgs> cmd) {
-  auto loops = MemSaver::Default()->GetDBs();
-  auto rets = std::make_shared<MultiResult>(loops.size());
-  for (int i = 0; i < loops.size(); i++) {
-    MemDB *db = loops[i].second;
-    loops[i].first->RunInLoopNoWait(
-        [cmd, db, rets](EventLoop *et, std::shared_ptr<void> arg) {
+void FlushAllCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                     std::shared_ptr<RockinConn> conn) {
+  const auto &dbs = MemSaver::Default()->dbs();
+  auto rets = std::make_shared<MultiResult>(dbs.size());
+  for (auto iter = dbs.begin(); iter != dbs.end(); ++iter) {
+    iter->first->RunInLoopNoWait(
+        [cmd_args, conn, rets](EventLoop *lt, std::shared_ptr<void> arg) {
+          auto db = std::static_pointer_cast<MemDB>(arg);
           for (int i = 0; i < DBNum; i++) {
             db->FlushDB(i);
           }
 
           rets->cnt--;
           if (rets->cnt.load() == 0) {
-            cmd->ReplyOk();
+            conn->ReplyOk();
           }
         },
-        nullptr);
+        iter->second);
   }
 }
 

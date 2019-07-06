@@ -26,6 +26,8 @@ class RockinConn : public std::enable_shared_from_this<RockinConn> {
 
   void ReplyNil();
   void ReplyOk();
+  void ReplyIntegerError();
+  void ReplySyntaxError();
   void ReplyError(std::shared_ptr<buffer_t> err);
   void ReplyErrorAndClose(std::shared_ptr<buffer_t> err);
   void ReplyString(std::shared_ptr<buffer_t> str);

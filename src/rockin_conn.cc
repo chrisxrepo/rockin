@@ -206,7 +206,7 @@ void RockinConn::OnRead(ssize_t nread, const uv_buf_t *buf) {
       return ReplyErrorAndClose(errstr);
     }
 
-    if (cmd_args_->OK() == false) {
+    if (cmd_args_->is_ok() == false) {
       break;
     }
 
@@ -241,6 +241,22 @@ void RockinConn::ReplyOk() {
   static std::shared_ptr<buffer_t> g_reply_ok = make_buffer("+OK\r\n");
   std::vector<std::shared_ptr<buffer_t>> datas;
   datas.push_back(g_reply_ok);
+  WriteData(std::move(datas));
+}
+
+void RockinConn::ReplyIntegerError() {
+  static std::shared_ptr<buffer_t> g_integer_err =
+      make_buffer("-ERR value is not an integer or out of range\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_integer_err);
+  WriteData(std::move(datas));
+}
+
+void RockinConn::ReplySyntaxError() {
+  static std::shared_ptr<buffer_t> g_syntax_err =
+      make_buffer("-ERR syntax error\r\n");
+  std::vector<std::shared_ptr<buffer_t>> datas;
+  datas.push_back(g_syntax_err);
   WriteData(std::move(datas));
 }
 

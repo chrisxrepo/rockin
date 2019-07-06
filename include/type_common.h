@@ -36,25 +36,49 @@ class PingCmd : public Cmd {
           std::shared_ptr<RockinConn> conn) override;
 };
 
-// command
-extern void CommandCommand(std::shared_ptr<CmdArgs> cmd);
+// INFO
+class InfoCmd : public Cmd {
+ public:
+  InfoCmd(CmdInfo info) : Cmd(info) {}
 
-// ping
-extern void PingCommand(std::shared_ptr<CmdArgs> cmd);
+  void Do(std::shared_ptr<CmdArgs> cmd_args,
+          std::shared_ptr<RockinConn> conn) override;
+};
 
-// info
-extern void InfoCommand(std::shared_ptr<CmdArgs> cmd);
+// DEL key1 [key2]...
+class DelCmd : public Cmd {
+ public:
+  DelCmd(CmdInfo info) : Cmd(info) {}
 
-// del key1 ...
-extern void DelCommand(std::shared_ptr<CmdArgs> cmd);
+  void Do(std::shared_ptr<CmdArgs> cmd_args,
+          std::shared_ptr<RockinConn> conn) override;
+};
 
-// select dbnum
-extern void SelectCommand(std::shared_ptr<CmdArgs> cmd);
+// SELECT dbnum
+class SelectCmd : public Cmd {
+ public:
+  SelectCmd(CmdInfo info) : Cmd(info) {}
+
+  void Do(std::shared_ptr<CmdArgs> cmd_args,
+          std::shared_ptr<RockinConn> conn) override;
+};
 
 // FLUSHDB
-extern void FlushDBCommand(std::shared_ptr<CmdArgs> cmd);
+class FlushDBCmd : public Cmd {
+ public:
+  FlushDBCmd(CmdInfo info) : Cmd(info) {}
+
+  void Do(std::shared_ptr<CmdArgs> cmd_args,
+          std::shared_ptr<RockinConn> conn) override;
+};
 
 // FLUSHALL
-extern void FlushAllCommand(std::shared_ptr<CmdArgs> cmd);
+class FlushAllCmd : public Cmd {
+ public:
+  FlushAllCmd(CmdInfo info) : Cmd(info) {}
+
+  void Do(std::shared_ptr<CmdArgs> cmd_args,
+          std::shared_ptr<RockinConn> conn) override;
+};
 
 }  // namespace rockin

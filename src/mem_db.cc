@@ -1,5 +1,6 @@
 #include "mem_db.h"
 #include "cmd_args.h"
+#include "rockin_conn.h"
 #include "type_common.h"
 #include "type_string.h"
 
@@ -21,10 +22,10 @@ std::shared_ptr<RedisObj> MemDB::Get(int dbindex,
 
 std::shared_ptr<RedisObj> MemDB::GetReplyNil(int dbindex,
                                              std::shared_ptr<buffer_t> key,
-                                             std::shared_ptr<CmdArgs> cmd) {
+                                             std::shared_ptr<RockinConn> conn) {
   auto obj = Get(dbindex, key);
   if (obj == nullptr) {
-    cmd->ReplyNil();
+    conn->ReplyNil();
     return nullptr;
   }
 
@@ -82,8 +83,8 @@ bool GenInt64(std::shared_ptr<buffer_t> str, int encode, int64_t &v) {
   return false;
 }
 
-bool CheckAndReply(std::shared_ptr<RedisObj> obj, std::shared_ptr<CmdArgs> cmd,
-                   int type) {
+bool CheckAndReply(std::shared_ptr<RedisObj> obj,
+                   std::shared_ptr<RockinConn> conn, int type) {
   if (obj->type == type) {
     if (type == Type_String &&
         (obj->encode == Encode_Raw || obj->encode == Encode_Int)) {
@@ -91,20 +92,23 @@ bool CheckAndReply(std::shared_ptr<RedisObj> obj, std::shared_ptr<CmdArgs> cmd,
     }
   }
 
-  cmd->ReplyError(CmdArgs::g_reply_type_warn);
+  static std::shared_ptr<buffer_t> g_reply_type_warn = make_buffer(
+      "WRONGTYPE Operation against a key holding the wrong kind of value");
+
+  conn->ReplyError(g_reply_type_warn);
   return false;
 }
 
 void ReplyRedisObj(std::shared_ptr<RedisObj> obj,
-                   std::shared_ptr<CmdArgs> cmd) {
+                   std::shared_ptr<RockinConn> conn) {
   if (obj == nullptr) {
-    cmd->ReplyNil();
+    conn->ReplyNil();
   } else if (obj->type == Type_String && obj->encode == Encode_Raw) {
     auto str_value = std::static_pointer_cast<buffer_t>(obj->value);
-    cmd->ReplyBulk(str_value);
+    conn->ReplyBulk(str_value);
   } else if (obj->type == Type_String && obj->encode == Encode_Int) {
     auto str_value = std::static_pointer_cast<buffer_t>(obj->value);
-    cmd->ReplyInteger(BUF_INT64(str_value));
+    conn->ReplyInteger(BUF_INT64(str_value));
   }
 }
 

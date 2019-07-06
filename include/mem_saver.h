@@ -18,8 +18,9 @@ class MemSaver {
 
   void DoCmd(std::shared_ptr<buffer_t> key, EventLoop::LoopCallback cb);
 
-  std::pair<EventLoop *, MemDB *> GetDB(std::shared_ptr<buffer_t> key);
-  std::vector<std::pair<EventLoop *, MemDB *>> GetDBs();
+  const std::vector<std::pair<EventLoop *, std::shared_ptr<MemDB>>> &dbs() {
+    return dbs_;
+  }
 
  private:
   SipHash *hash_;

@@ -42,24 +42,4 @@ void MemSaver::DoCmd(std::shared_ptr<buffer_t> key,
   pair.first->RunInLoopNoWait(cb, pair.second);
 }
 
-std::pair<EventLoop *, MemDB *> MemSaver::GetDB(std::shared_ptr<buffer_t> key) {
-  /* if (thread_num_ == 0) {
-     return std::make_pair(nullptr, nullptr);
-   }
-
-   uint64_t h = hash_->Hash((const uint8_t *)key->data, key->len);
-   int idx = h % thread_num_;
-   return dbs_[idx];
-   */
-  return std::make_pair(nullptr, nullptr);
-}
-
-std::vector<std::pair<EventLoop *, MemDB *>> MemSaver::GetDBs() {
-  std::vector<std::pair<EventLoop *, MemDB *>> dbs;
-  /* for (int i = 0; i < loops_.size(); i++) {
-     dbs.push_back(std::make_pair(loops_[i], dbs_[i]));
-   }*/
-  return dbs;
-}
-
 }  // namespace rockin
