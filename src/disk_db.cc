@@ -1,4 +1,4 @@
-#include "rocks_db.h"
+#include "disk_db.h"
 #include <assert.h>
 #include <glog/logging.h>
 #include <rocksdb/table.h>
@@ -8,13 +8,13 @@
 #include "utils.h"
 
 namespace rockin {
-std::shared_ptr<rocksdb::Cache> RocksDB::g_meta_block_cache =
+std::shared_ptr<rocksdb::Cache> DiskDB::g_meta_block_cache =
     rocksdb::NewLRUCache(1 << 30);
-std::shared_ptr<rocksdb::Cache> RocksDB::g_data_block_cache =
+std::shared_ptr<rocksdb::Cache> DiskDB::g_data_block_cache =
     rocksdb::NewLRUCache(128 << 20);
 
-RocksDB::RocksDB(int partion_id, const std::string partition_name,
-                 const std::string &path)
+DiskDB::DiskDB(int partion_id, const std::string partition_name,
+               const std::string &path)
     : partition_id_(partion_id), partition_name_(partition_name), path_(path) {
   std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
 
@@ -90,7 +90,7 @@ RocksDB::RocksDB(int partion_id, const std::string partition_name,
             << ", column family size:" << column_families.size();
 }
 
-RocksDB::~RocksDB() {
+DiskDB::~DiskDB() {
   if (db_) {
     for (int i = 0; i < DBNum; i++) {
       db_->DestroyColumnFamilyHandle(mt_handles_[i]);
@@ -100,4 +100,100 @@ RocksDB::~RocksDB() {
     delete db_;
   }
 }
+
+bool DiskDB::GetMeta(int db, const std::string &key, std::string *value) {
+  if (db < 0 || db >= mt_handles_.size()) {
+    return false;
+  }
+
+  return Get(mt_handles_[db], key, value);
+}
+
+bool DiskDB::GetData(int db, const std::string &key, std::string *value) {
+  if (db < 0 || db >= db_handles_.size()) {
+    return false;
+  }
+
+  return Get(db_handles_[db], key, value);
+}
+
+bool DiskDB::SetMeta(int db, const std::string &key, const std::string &value) {
+  if (db < 0 || db >= mt_handles_.size()) {
+    return false;
+  }
+
+  return Set(mt_handles_[db], key, value);
+}
+
+bool DiskDB::SetData(int db, const std::string &key, const std::string &value) {
+  if (db < 0 || db >= db_handles_.size()) {
+    return false;
+  }
+
+  return Set(db_handles_[db], key, value);
+}
+
+bool DiskDB::SetAll(
+    int db, const std::vector<std::pair<std::string, std::string>> &metas,
+    const std::vector<std::pair<std::string, std::string>> &datas) {
+  if (db < 0 || db >= db_handles_.size()) {
+    return false;
+  }
+
+  rocksdb::WriteBatch batch;
+  for (auto iter = metas.begin(); iter != metas.end(); ++iter) {
+    auto status = batch.Put(mt_handles_[db], iter->first, iter->second);
+    if (!status.ok()) {
+      LOG(ERROR) << "rocksdb WriteBatch.Put:" << status.ToString();
+      return false;
+    }
+  }
+  for (auto iter = datas.begin(); iter != datas.end(); ++iter) {
+    auto status = batch.Put(mt_handles_[db], iter->first, iter->second);
+    if (!status.ok()) {
+      LOG(ERROR) << "rocksdb WriteBatch.Put:" << status.ToString();
+      return false;
+    }
+  }
+
+  auto status = db_->Write(rocksdb::WriteOptions(), &batch);
+  if (!status.ok()) {
+    LOG(ERROR) << "rocksdb Write:" << status.ToString();
+    return false;
+  }
+
+  return true;
+}
+
+bool DiskDB::Get(rocksdb::ColumnFamilyHandle *cf, const std::string &key,
+                 std::string *value) {
+  auto status = db_->Get(rocksdb::ReadOptions(), cf,
+                         rocksdb::Slice(key.c_str(), key.length()), value);
+
+  if (status.IsNotFound()) {
+    return false;
+  }
+
+  if (!status.ok()) {
+    LOG(ERROR) << "rocksdb Get:" << status.ToString();
+    return false;
+  }
+
+  return true;
+}
+
+bool DiskDB::Set(rocksdb::ColumnFamilyHandle *cf, const std::string &key,
+                 const std::string &value) {
+  auto status = db_->Put(rocksdb::WriteOptions(), cf,
+                         rocksdb::Slice(key.c_str(), key.length()),
+                         rocksdb::Slice(value.c_str(), value.length()));
+
+  if (!status.ok()) {
+    LOG(ERROR) << "rocksdb Put:" << status.ToString();
+    return false;
+  }
+
+  return true;
+}
+
 }  // namespace rockin

@@ -3,9 +3,9 @@
 #include <glog/logging.h>
 #include <iostream>
 #include "cmd_table.h"
+#include "disk_saver.h"
 #include "mem_saver.h"
 #include "rockin_server.h"
-#include "rocks_pool.h"
 #include "rocksdb/db.h"
 
 void signal_handle(uv_signal_t* handle, int signum) {
@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
 
   // init rocksdb
-  rockin::RocksPool::GetInstance()->Init(2, "/tmp/rocksdb");
+  rockin::DiskSaver::Default()->InitAndCreate(2, "/tmp/rocksdb");
 
   // init handle
   rockin::CmdTable::Default()->Init();

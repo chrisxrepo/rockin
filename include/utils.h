@@ -115,7 +115,11 @@ extern char HexDigitToInt(char c);
 // get next power of 2
 extern uint32_t NextPower(uint32_t size);
 
+// get random bytes
 extern void RandomBytes(unsigned char bytes[], size_t len);
+
+// simple hashcode
+extern uint32_t HashCode(const char *src, size_t len);
 
 // bit 1 count
 extern size_t BitCount(void *s, long count);

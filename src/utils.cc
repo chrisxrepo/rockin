@@ -488,6 +488,15 @@ void RandomBytes(unsigned char bytes[], size_t len) {
   }
 }
 
+uint32_t HashCode(const char *src, size_t len) {
+  uint32_t hash = 0;
+  uint32_t send = 131;
+  for (size_t i = 0; i < len; i++) {
+    hash = hash * send + (*(src + i));
+  }
+  return hash & 0x7FFFFFFF;
+}
+
 int64_t GetDirectorySize(const std::string &dir) {
   DIR *dp;
   struct dirent *entry;

@@ -9,6 +9,13 @@ namespace rockin {
 class RockinConn;
 class CmdArgs;
 
+class StringCmd : public Cmd {
+ public:
+  std::string EncodeKey(std::shared_ptr<buffer_t> key);
+
+  std::shared_ptr<buffer_t> DecodeKey(const std::string &key);
+};
+
 // GET key
 class GetCmd : public Cmd {
  public:
