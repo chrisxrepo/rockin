@@ -2,32 +2,9 @@
 #include <iostream>
 #include <memory>
 #include <unordered_map>
+#include "cmd_interface.h"
 
 namespace rockin {
-class CmdArgs;
-class RockinConn;
-
-struct CmdInfo {
-  std::string name;
-  int arity;
-
-  CmdInfo() : arity(0) {}
-  CmdInfo(std::string name_, int arity_) : name(name_), arity(arity_) {}
-};
-
-class Cmd {
- public:
-  Cmd(CmdInfo info) : info_(info) {}
-
-  virtual void Do(std::shared_ptr<CmdArgs> cmd_args,
-                  std::shared_ptr<RockinConn> conn) = 0;
-
-  const CmdInfo &info() { return info_; }
-
- private:
-  CmdInfo info_;
-};
-
 class CmdTable {
  public:
   static CmdTable *Default();

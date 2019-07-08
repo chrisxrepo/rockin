@@ -125,7 +125,7 @@ void CmdTable::HandeCmd(std::shared_ptr<RockinConn> conn,
     std::ostringstream build;
     build << "ERR unknown command `" << cmd << "`, with args beginning with: ";
     for (int i = 1; i < args.size(); i++) build << "`" << args[i] << "`, ";
-    conn->ReplyError(make_buffer(build.str()));
+    conn->ReplyError(rockin::make_shared<membuf_t>(build.str()));
     return;
   }
 
@@ -134,7 +134,7 @@ void CmdTable::HandeCmd(std::shared_ptr<RockinConn> conn,
       int(args.size()) < -iter->second->info().arity) {
     std::ostringstream build;
     build << "ERR wrong number of arguments for '" << cmd << "' command";
-    conn->ReplyError(make_buffer(build.str()));
+    conn->ReplyError(rockin::make_shared<membuf_t>(build.str()));
     return;
   }
 

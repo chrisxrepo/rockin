@@ -4,6 +4,7 @@
 #include <iostream>
 #include "cmd_table.h"
 #include "mem_saver.h"
+#include "rockin_alloc.h"
 #include "rockin_server.h"
 #include "rocks_pool.h"
 #include "rocksdb/db.h"

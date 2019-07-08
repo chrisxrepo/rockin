@@ -2,6 +2,7 @@
 #include <uv.h>
 #include <functional>
 #include "byte_buf.h"
+#include "rockin_alloc.h"
 #include "utils.h"
 
 namespace rockin {
@@ -17,7 +18,7 @@ class RockinConn : public std::enable_shared_from_this<RockinConn> {
 
   void Close();
 
-  bool WriteData(std::vector<std::shared_ptr<buffer_t>> &&datas);
+  bool WriteData(std::vector<std::shared_ptr<membuf_t>> &&datas);
 
   uv_tcp_t *handle() { return t_; }
 
@@ -28,12 +29,12 @@ class RockinConn : public std::enable_shared_from_this<RockinConn> {
   void ReplyOk();
   void ReplyIntegerError();
   void ReplySyntaxError();
-  void ReplyError(std::shared_ptr<buffer_t> err);
-  void ReplyErrorAndClose(std::shared_ptr<buffer_t> err);
-  void ReplyString(std::shared_ptr<buffer_t> str);
+  void ReplyError(std::shared_ptr<membuf_t> err);
+  void ReplyErrorAndClose(std::shared_ptr<membuf_t> err);
+  void ReplyString(std::shared_ptr<membuf_t> str);
   void ReplyInteger(int64_t num);
-  void ReplyBulk(std::shared_ptr<buffer_t> str);
-  void ReplyArray(std::vector<std::shared_ptr<buffer_t>> &values);
+  void ReplyBulk(std::shared_ptr<membuf_t> str);
+  void ReplyArray(std::vector<std::shared_ptr<membuf_t>> &values);
 
  private:
   void OnAlloc(size_t suggested_size, uv_buf_t *buf);
