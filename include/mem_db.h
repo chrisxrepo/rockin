@@ -35,11 +35,22 @@ class RockinConn;
 struct MemObj {
   uint8_t type;
   uint8_t encode;
-  uint16_t version;
+  uint32_t version;
   uint32_t ttl;
   MemPtr key;
   std::shared_ptr<void> value;
   std::shared_ptr<MemObj> next;
+
+  MemObj()
+      : type(0),
+        encode(0),
+        version(0),
+        ttl(0),
+        key(nullptr),
+        value(nullptr),
+        next(nullptr) {}
+
+  size_t Size() { return sizeof(MemObj); }
 };
 
 class MemDB {
@@ -58,6 +69,8 @@ class MemDB {
   std::shared_ptr<MemObj> Set(int dbindex, MemPtr key,
                               std::shared_ptr<void> value, unsigned char type,
                               unsigned char encode);
+
+  void Insert(int dbindex, std::shared_ptr<MemObj> obj);
 
   // delete by key
   bool Delete(int dbindex, MemPtr key);

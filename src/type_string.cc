@@ -10,6 +10,75 @@
 
 namespace rockin {
 
+#define STRING_MAX_BULK_SIZE 2048
+
+#define STRING_META_SIZE 12
+#define STRING_META_BULK(str) DecodeFixed16((const char *)(str))
+
+#define STRING_BULK(len) \
+  ((len) / STRING_MAX_BULK_SIZE + (((len) % STRING_MAX_BULK_SIZE) ? 1 : 0))
+
+#define CHECK_STRING_META(o, t, e, ob, nb) \
+  (o != nullptr && o->type == t && o->encode == e && ob == nb)
+
+// meta key ->  key
+//
+// meta value-> |   bulk   |   type   |  encode   |  version  |    ttl   |
+//              |  2 byte  |   1 byte |   1 byte  |   4 byte  |  4 byte  |
+//
+MemPtr StringCmd::MetaValue(std::shared_ptr<MemObj> obj) {
+  MemPtr v = rockin::make_shared<membuf_t>(STRING_META_SIZE);
+  auto str_value = OBJ_STRING(obj);
+  EncodeFixed16(v->data, STRING_BULK(str_value->len));
+  EncodeFixed8(v->data + 2, obj->type);
+  EncodeFixed8(v->data + 3, obj->encode);
+  EncodeFixed32(v->data + 4, obj->version);
+  EncodeFixed32(v->data + 8, obj->ttl);
+
+  return v;
+}
+
+// data value-> |  Head(S) |  key len  |   key    |  version  |   bulk id |
+//              |  1 byte  |   4 byte  |   n byte |   4 byte  |   2 byte  |
+//
+// meta value->  split byte size
+//
+KVPairS StringCmd::DataKeyValue(std::shared_ptr<MemObj> obj) {
+  auto str_value = OBJ_STRING(obj);
+  size_t bulk = STRING_BULK(str_value->len);
+
+  KVPairS kvs;
+  for (size_t i = 0; i < bulk; i++) {
+    auto key = rockin::make_shared<membuf_t>(11 + obj->key->len);
+    key->data[0] = 'S';
+    EncodeFixed32(key->data + 1, obj->key->len);
+    memcpy(key->data + 5, obj->key->data, obj->key->len);
+    EncodeFixed32(key->data + (obj->key->len + 5), obj->version);
+    EncodeFixed16(key->data + (obj->key->len + 9), i);
+
+    auto value = rockin::make_shared<membuf_t>();
+    value->data = str_value->data + (i * STRING_MAX_BULK_SIZE);
+    value->len = (i < bulk ? STRING_MAX_BULK_SIZE
+                           : (str_value->len % STRING_MAX_BULK_SIZE));
+
+    kvs.push_back(std::make_pair(key, value));
+  }
+  return std::move(kvs);
+}
+
+std::shared_ptr<MemObj> StringCmd::GetStringMeta(int dbindex, MemPtr key,
+                                                 uint16_t &bulk) {
+  std::string meta;
+  auto obj = GetBaseMeta(dbindex, key, &meta);
+  if (obj != nullptr && obj->type == Type_String &&
+      meta.length() == STRING_META_SIZE) {
+    bulk = STRING_META_BULK(meta.c_str());
+  } else {
+    bulk = 0;
+  }
+  return obj;
+}
+///////////////////////////////////////////////////////////////////////////////
 void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
@@ -32,8 +101,38 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
       cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
                                EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
+
+        bool update_meta = false;
         auto &args = cmd_args->args();
-        db->Set(conn->index(), args[1], args[2], Type_String, Encode_Raw);
+        auto obj = db->Get(conn->index(), args[1]);
+        if (obj == nullptr) {
+          uint16_t bulk;
+          obj = cmd->GetStringMeta(conn->index(), args[1], bulk);
+          update_meta = !CHECK_STRING_META(obj, Type_String, Encode_Raw, bulk,
+                                           STRING_BULK(args[2]->len));
+
+          if (obj == nullptr) {
+            obj = rockin::make_shared<MemObj>();
+            obj->key = args[1];
+          }
+
+          obj->type = Type_String;
+          obj->encode = Encode_Raw;
+          if (update_meta) obj->version++;
+          db->Insert(conn->index(), obj);
+        }
+
+        obj->value = args[2];
+        if (update_meta) {
+          DiskSaver::Default()->WriteAll(
+              conn->index(), args[1],
+              KVPairS{std::make_pair(obj->key, cmd->MetaValue(obj))},
+              cmd->DataKeyValue(obj));
+        } else {
+          DiskSaver::Default()->WriteData(conn->index(), args[1],
+                                          cmd->DataKeyValue(obj));
+        }
+
         conn->ReplyOk();
       });
 }

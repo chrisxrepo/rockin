@@ -1,8 +1,14 @@
 #pragma once
 #include <iostream>
 #include "coding.h"
+#include "disk_saver.h"
 #include "mem_db.h"
 #include "utils.h"
+
+#define META_TYPE(str, len) DecodeFixed8((const char *)(str) + ((len)-10))
+#define META_ENCODE(str, len) DecodeFixed8((const char *)(str) + ((len)-9))
+#define META_VERSION(str, len) DecodeFixed32((const char *)(str) + ((len)-8))
+#define META_TTL(str, len) DecodeFixed32((const char *)(str) + ((len)-4))
 
 namespace rockin {
 class CmdArgs;
@@ -23,16 +29,20 @@ class Cmd {
   virtual void Do(std::shared_ptr<CmdArgs> cmd_args,
                   std::shared_ptr<RockinConn> conn) = 0;
 
-  // meta key ->  key
-  // meta value-> |  version  |   ttl   |  type  |  encode  |
-  //              |   2 byte  |  4 byte | 1 byte |  1 byte  |
-  virtual MemPtr MetaValue(std::shared_ptr<MemObj> obj) {
-    MemPtr v = rockin::make_shared<membuf_t>(8);
-    EncodeFixed16(v->data, 100);
-    EncodeFixed32(v->data + 2, 0);
-    EncodeFixed8(v->data + 6, obj->type);
-    EncodeFixed8(v->data + 7, obj->encode);
-    return v;
+  std::shared_ptr<MemObj> GetBaseMeta(int dbindex, MemPtr key,
+                                      std::string *meta_value) {
+    auto diskdb = DiskSaver::Default()->GetDB(key);
+    if (diskdb->GetMeta(dbindex, key, meta_value) &&
+        meta_value->length() > 10) {
+      auto obj = rockin::make_shared<MemObj>();
+      obj->key = key;
+      obj->type = META_TYPE(meta_value->c_str(), meta_value->length());
+      obj->encode = META_ENCODE(meta_value->c_str(), meta_value->length());
+      obj->version = META_VERSION(meta_value->c_str(), meta_value->length());
+      obj->ttl = META_TTL(meta_value->c_str(), meta_value->length());
+    }
+
+    return nullptr;
   }
 
   const CmdInfo &info() { return info_; }

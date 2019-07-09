@@ -3,6 +3,7 @@
 #include <string.h>
 #include <iostream>
 #include "cmd_table.h"
+#include "disk_saver.h"
 #include "utils.h"
 
 namespace rockin {
@@ -13,6 +14,16 @@ class MemObj;
 class StringCmd : public Cmd {
  public:
   StringCmd(CmdInfo info) : Cmd(info) {}
+
+  // meta key ->  key
+  // meta value-> |   bulk   |   type   |  encode   |  version  |    ttl   |
+  //              |  2 byte  |   1 byte |   1 byte  |   4 byte  |  4 byte  |
+  MemPtr MetaValue(std::shared_ptr<MemObj> obj);
+
+  KVPairS DataKeyValue(std::shared_ptr<MemObj> obj);
+
+  std::shared_ptr<MemObj> GetStringMeta(int dbindex, MemPtr key,
+                                        uint16_t &bulk);
 };
 
 // GET key

@@ -141,8 +141,16 @@ std::shared_ptr<DiskDB> DiskSaver::GetDB(MemPtr key) {
   return partitions_[index];
 }
 
-bool DiskSaver::WriteData(int dbindex, MemPtr key, WriteKVS mates,
-                          WriteKVS datas) {
+bool DiskSaver::WriteMeta(int dbindex, MemPtr key, KVPairS mates) {
+  return WriteAll(dbindex, key, mates, KVPairS());
+}
+
+bool DiskSaver::WriteData(int dbindex, MemPtr key, KVPairS datas) {
+  return WriteAll(dbindex, key, KVPairS(), datas);
+}
+
+bool DiskSaver::WriteAll(int dbindex, MemPtr key, KVPairS mates,
+                         KVPairS datas) {
   _WriteData wd;
   wd.key = key;
   for (auto iter = mates.begin(); iter != mates.end(); ++iter) {

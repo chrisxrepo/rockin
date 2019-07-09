@@ -30,6 +30,11 @@ std::shared_ptr<MemObj> MemDB::GetReplyNil(int dbindex, MemPtr key,
   return obj;
 }
 
+void MemDB::Insert(int dbindex, std::shared_ptr<MemObj> obj) {
+  auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
+  dic->Insert(obj);
+}
+
 std::shared_ptr<MemObj> MemDB::Set(int dbindex, MemPtr key,
                                    std::shared_ptr<void> value,
                                    unsigned char type, unsigned char encode) {

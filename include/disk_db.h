@@ -30,20 +30,18 @@ class DiskDB {
 
   bool WriteBatch(const std::vector<DiskWrite> &writes);
 
-  bool GetMeta(int db, const std::string &key, std::string *value);
-  bool GetData(int db, const std::string &key, std::string *value);
+  bool GetMeta(int db, MemPtr key, std::string *value);
+  /* bool GetData(int db, const std::string &key, std::string *value);
 
   bool SetMeta(int db, const std::string &key, const std::string &value);
   bool SetData(int db, const std::string &key, const std::string &value);
   bool SetAll(int db,
               const std::vector<std::pair<std::string, std::string>> &metas,
               const std::vector<std::pair<std::string, std::string>> &datas);
-
+*/
  private:
-  bool Get(rocksdb::ColumnFamilyHandle *cf, const std::string &key,
-           std::string *value);
-  bool Set(rocksdb::ColumnFamilyHandle *cf, const std::string &key,
-           const std::string &value);
+  bool Get(rocksdb::ColumnFamilyHandle *cf, MemPtr key, std::string *value);
+  bool Set(rocksdb::ColumnFamilyHandle *cf, MemPtr key, MemPtr value);
 
  private:
   int partition_id_;

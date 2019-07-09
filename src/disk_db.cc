@@ -150,15 +150,15 @@ bool DiskDB::WriteBatch(const std::vector<DiskWrite> &writes) {
   return status.ok();
 }
 
-bool DiskDB::GetMeta(int db, const std::string &key, std::string *value) {
+bool DiskDB::GetMeta(int db, MemPtr key, std::string *value) {
   if (db < 0 || db >= mt_handles_.size()) {
     return false;
   }
 
   return Get(mt_handles_[db], key, value);
 }
-
-bool DiskDB::GetData(int db, const std::string &key, std::string *value) {
+/*
+bool DiskDB::GetData(int db, MemPtr key, std::string *value) {
   if (db < 0 || db >= db_handles_.size()) {
     return false;
   }
@@ -213,11 +213,12 @@ bool DiskDB::SetAll(
 
   return true;
 }
+*/
 
-bool DiskDB::Get(rocksdb::ColumnFamilyHandle *cf, const std::string &key,
+bool DiskDB::Get(rocksdb::ColumnFamilyHandle *cf, MemPtr key,
                  std::string *value) {
   auto status = db_->Get(rocksdb::ReadOptions(), cf,
-                         rocksdb::Slice(key.c_str(), key.length()), value);
+                         rocksdb::Slice(key->data, key->len), value);
 
   if (status.IsNotFound()) {
     return false;
@@ -231,11 +232,10 @@ bool DiskDB::Get(rocksdb::ColumnFamilyHandle *cf, const std::string &key,
   return true;
 }
 
-bool DiskDB::Set(rocksdb::ColumnFamilyHandle *cf, const std::string &key,
-                 const std::string &value) {
-  auto status = db_->Put(rocksdb::WriteOptions(), cf,
-                         rocksdb::Slice(key.c_str(), key.length()),
-                         rocksdb::Slice(value.c_str(), value.length()));
+bool DiskDB::Set(rocksdb::ColumnFamilyHandle *cf, MemPtr key, MemPtr value) {
+  auto status =
+      db_->Put(rocksdb::WriteOptions(), cf, rocksdb::Slice(key->data, key->len),
+               rocksdb::Slice(value->data, value->len));
 
   if (!status.ok()) {
     LOG(ERROR) << "rocksdb Put:" << status.ToString();
