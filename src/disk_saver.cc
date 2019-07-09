@@ -70,7 +70,7 @@ void DiskSaver::InitAndCreate(int partition_num, std::vector<int> partitions,
   }
 }
 
-std::shared_ptr<DiskDB> DiskSaver::GetDB(std::shared_ptr<buffer_t> key) {
+std::shared_ptr<DiskDB> DiskSaver::GetDB(std::shared_ptr<membuf_t> key) {
   int index = HashCode(key->data, key->len) % dbs_.size();
   return dbs_[index];
 }

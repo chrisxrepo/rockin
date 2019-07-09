@@ -15,13 +15,6 @@ class StringCmd : public Cmd {
   StringCmd(CmdInfo info) : Cmd(info) {}
 };
 
-class StringCmd : public Cmd {
- public:
-  std::string EncodeKey(std::shared_ptr<buffer_t> key);
-
-  std::shared_ptr<buffer_t> DecodeKey(const std::string &key);
-};
-
 // GET key
 class GetCmd : public StringCmd, public std::enable_shared_from_this<GetCmd> {
  public:

@@ -9,9 +9,6 @@
 #include "type_common.h"
 
 namespace rockin {
-std::string StringCmd::EncodeKey(std::shared_ptr<buffer_t> key) {}
-
-std::shared_ptr<buffer_t> StringCmd::DecodeKey(const std::string &key) {}
 
 void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {

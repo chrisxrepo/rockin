@@ -2,6 +2,7 @@
 #include <memory>
 #include <vector>
 #include "disk_db.h"
+#include "rockin_alloc.h"
 #include "utils.h"
 
 namespace rockin {
@@ -20,7 +21,7 @@ class DiskSaver {
                      const std::string &path);
 
   // get diskdb
-  std::shared_ptr<DiskDB> GetDB(std::shared_ptr<buffer_t> key);
+  std::shared_ptr<DiskDB> GetDB(std::shared_ptr<membuf_t> key);
 
  private:
   std::string path_;
