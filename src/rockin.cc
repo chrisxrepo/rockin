@@ -5,6 +5,7 @@
 #include "cmd_table.h"
 #include "disk_saver.h"
 #include "mem_saver.h"
+#include "rockin_alloc.h"
 #include "rockin_server.h"
 #include "rocksdb/db.h"
 

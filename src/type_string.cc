@@ -2,6 +2,7 @@
 #include <glog/logging.h>
 #include <math.h>
 #include "cmd_args.h"
+#include "coding.h"
 #include "mem_db.h"
 #include "mem_saver.h"
 #include "rockin_conn.h"
@@ -15,10 +16,11 @@ std::shared_ptr<buffer_t> StringCmd::DecodeKey(const std::string &key) {}
 void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
         auto obj = db->GetReplyNil(conn->index(), cmd_args->args()[1], conn);
+
         if (obj == nullptr || !CheckAndReply(obj, conn, Type_String)) {
           return;
         }
@@ -30,8 +32,8 @@ void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
         auto &args = cmd_args->args();
         db->Set(conn->index(), args[1], args[2], Type_String, Encode_Raw);
@@ -42,8 +44,8 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void AppendCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
         auto &args = cmd_args->args();
         auto obj = db->Get(conn->index(), args[1]);
@@ -51,14 +53,15 @@ void AppendCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           return;
         }
 
-        std::shared_ptr<buffer_t> str_value;
+        std::shared_ptr<membuf_t> str_value;
         if (obj == nullptr) {
           str_value = args[2];
           db->Set(conn->index(), args[1], str_value, Type_String, Encode_Raw);
         } else if (obj->type == Type_String) {
           str_value = GenString(OBJ_STRING(obj), obj->encode);
           int oldlen = str_value->len;
-          str_value = copy_buffer(str_value, oldlen + args[2]->len);
+          str_value =
+              rockin::make_shared<membuf_t>(oldlen + args[2]->len, str_value);
           memcpy(str_value->data + oldlen, args[2]->data, args[2]->len);
           OBJ_SET_VALUE(obj, str_value, Type_String, Encode_Raw);
         }
@@ -70,15 +73,15 @@ void AppendCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void GetSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
         auto &args = cmd_args->args();
         auto obj = db->Get(conn->index(), args[1]);
         if (obj != nullptr && !CheckAndReply(obj, conn, Type_String)) {
           return;
         }
-        ReplyRedisObj(obj, conn);
+        ReplyMemObj(obj, conn);
 
         if (obj == nullptr) {
           db->Set(conn->index(), args[1], args[2], Type_String, Encode_Raw);
@@ -96,29 +99,30 @@ void MGetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
   auto rets = std::make_shared<MultiResult>(cnt);
 
   for (int i = 0; i < cnt; i++) {
-    MemSaver::Default()->DoCmd(
-        cmd_args->args()[i + 1],
-        [cmd_args, conn, rets, i](EventLoop *lt, std::shared_ptr<void> arg) {
-          auto &args = cmd_args->args();
-          auto db = std::static_pointer_cast<MemDB>(arg);
-          auto obj = db->Get(conn->index(), args[i + 1]);
-          if (obj != nullptr) {
-            rets->str_values[i] = GenString(OBJ_STRING(obj), obj->encode);
-          }
+    MemSaver::Default()->DoCmd(cmd_args->args()[i + 1],
+                               [cmd_args, conn, cmd = shared_from_this(), rets,
+                                i](EventLoop *lt, std::shared_ptr<void> arg) {
+                                 auto &args = cmd_args->args();
+                                 auto db = std::static_pointer_cast<MemDB>(arg);
+                                 auto obj = db->Get(conn->index(), args[i + 1]);
+                                 if (obj != nullptr) {
+                                   rets->str_values[i] =
+                                       GenString(OBJ_STRING(obj), obj->encode);
+                                 }
 
-          rets->cnt--;
-          if (rets->cnt.load() == 0) {
-            conn->ReplyArray(rets->str_values);
-          }
-        });
+                                 rets->cnt--;
+                                 if (rets->cnt.load() == 0) {
+                                   conn->ReplyArray(rets->str_values);
+                                 }
+                               });
   }
 }
 
 void MSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                  std::shared_ptr<RockinConn> conn) {
   if (cmd_args->args().size() % 2 != 1) {
-    static std::shared_ptr<buffer_t> g_reply_mset_args_err =
-        make_buffer("ERR wrong number of arguments for MSET");
+    static std::shared_ptr<membuf_t> g_reply_mset_args_err =
+        rockin::make_shared<membuf_t>("ERR wrong number of arguments for MSET");
 
     conn->ReplyError(g_reply_mset_args_err);
     return;
@@ -128,19 +132,20 @@ void MSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
   auto rets = std::make_shared<MultiResult>(cnt);
 
   for (int i = 0; i < cnt; i++) {
-    MemSaver::Default()->DoCmd(
-        cmd_args->args()[i * 2 + 1],
-        [cmd_args, conn, rets, i](EventLoop *lt, std::shared_ptr<void> arg) {
-          auto &args = cmd_args->args();
-          auto db = std::static_pointer_cast<MemDB>(arg);
-          db->Set(conn->index(), args[i * 2 + 1], args[i * 2 + 2], Type_String,
-                  Encode_Raw);
+    MemSaver::Default()->DoCmd(cmd_args->args()[i * 2 + 1],
+                               [cmd_args, conn, cmd = shared_from_this(), rets,
+                                i](EventLoop *lt, std::shared_ptr<void> arg) {
+                                 auto &args = cmd_args->args();
+                                 auto db = std::static_pointer_cast<MemDB>(arg);
+                                 db->Set(conn->index(), args[i * 2 + 1],
+                                         args[i * 2 + 2], Type_String,
+                                         Encode_Raw);
 
-          rets->cnt--;
-          if (rets->cnt.load() == 0) {
-            conn->ReplyOk();
-          }
-        });
+                                 rets->cnt--;
+                                 if (rets->cnt.load() == 0) {
+                                   conn->ReplyOk();
+                                 }
+                               });
   }
 }
 
@@ -154,7 +159,7 @@ static void IncrDecrProcess(std::shared_ptr<CmdArgs> cmd_args,
   }
 
   if (obj == nullptr) {
-    auto value = make_buffer(sizeof(int64_t));
+    auto value = rockin::make_shared<membuf_t>(sizeof(int64_t));
     BUF_INT64(value) = num;
     obj = db->Set(conn->index(), args[1], value, Type_String, Encode_Int);
   } else {
@@ -167,12 +172,12 @@ static void IncrDecrProcess(std::shared_ptr<CmdArgs> cmd_args,
     if (obj->encode == Encode_Int) {
       BUF_INT64(OBJ_STRING(obj)) = oldv + num;
     } else {
-      auto value = make_buffer(sizeof(int64_t));
+      auto value = rockin::make_shared<membuf_t>(sizeof(int64_t));
       BUF_INT64(value) = oldv + num;
       OBJ_SET_VALUE(obj, value, Type_String, Encode_Int);
     }
   }
-  ReplyRedisObj(obj, conn);
+  ReplyMemObj(obj, conn);
 }
 
 void IncrCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
@@ -187,8 +192,8 @@ void IncrCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void IncrbyCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
 
         int64_t tmpv;
@@ -204,19 +209,19 @@ void IncrbyCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
 void DecrCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                  std::shared_ptr<RockinConn> conn) {
-  MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
-        auto db = std::static_pointer_cast<MemDB>(arg);
-        IncrDecrProcess(cmd_args, conn, db, -1);
-      });
+  MemSaver::Default()->DoCmd(cmd_args->args()[1],
+                             [cmd_args, conn, cmd = shared_from_this()](
+                                 EventLoop *lt, std::shared_ptr<void> arg) {
+                               auto db = std::static_pointer_cast<MemDB>(arg);
+                               IncrDecrProcess(cmd_args, conn, db, -1);
+                             });
 }
 
 void DecrbyCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
 
         int64_t tmpv;
@@ -230,10 +235,11 @@ void DecrbyCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
       });
 }
 
-static std::shared_ptr<buffer_t> g_reply_bit_err =
-    make_buffer("bit offset is not an integer or out of range");
+static std::shared_ptr<membuf_t> g_reply_bit_err =
+    rockin::make_shared<membuf_t>(
+        "bit offset is not an integer or out of range");
 
-static bool GetBitOffset(std::shared_ptr<buffer_t> v,
+static bool GetBitOffset(std::shared_ptr<membuf_t> v,
                          std::shared_ptr<RockinConn> conn, int64_t &offset) {
   if (StringToInt64(v->data, v->len, &offset) != 1) {
     conn->ReplyError(g_reply_bit_err);
@@ -251,8 +257,8 @@ static bool GetBitOffset(std::shared_ptr<buffer_t> v,
 void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
         int64_t offset, on;
         auto &args = cmd_args->args();
@@ -271,9 +277,9 @@ void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         }
 
         int byte = offset >> 3;
-        std::shared_ptr<buffer_t> str_value;
+        std::shared_ptr<membuf_t> str_value;
         if (obj == nullptr) {
-          str_value = make_buffer(byte + 1);
+          str_value = rockin::make_shared<membuf_t>(byte + 1);
           obj = db->Set(conn->index(), args[1], str_value, Type_String,
                         Encode_Raw);
         } else {
@@ -283,7 +289,7 @@ void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
         if (byte + 1 > str_value->len) {
           int oldlen = str_value->len;
-          str_value = copy_buffer(str_value, byte + 1);
+          str_value = rockin::make_shared<membuf_t>(byte + 1, str_value);
           memset(str_value->data + oldlen, 0, str_value->len - oldlen);
           OBJ_SET_VALUE(obj, str_value, Type_String, Encode_Raw);
         }
@@ -301,8 +307,8 @@ void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void GetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
         int64_t offset;
         auto &args = cmd_args->args();
@@ -335,8 +341,8 @@ void GetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void BitCountCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                      std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
         auto &args = cmd_args->args();
         auto obj = db->Get(conn->index(), args[1]);
@@ -384,8 +390,8 @@ void BitCountCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                   std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
 #define BITOP_AND 0
 #define BITOP_OR 1
 #define BITOP_XOR 2
@@ -423,7 +429,7 @@ void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         }
 
         size_t maxlen = 0;
-        std::vector<std::shared_ptr<buffer_t>> values;
+        std::vector<std::shared_ptr<membuf_t>> values;
         for (int i = 3; i < args.size(); i++) {
           auto obj = db->Get(conn->index(), args[i]);
           if (obj == nullptr) {
@@ -439,7 +445,7 @@ void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         }
 
         if (maxlen > 0) {
-          auto res = make_buffer(maxlen);
+          auto res = rockin::make_shared<membuf_t>(maxlen);
           for (int j = 0; j < maxlen; j++) {
             char output = (values[0] != nullptr && values[0]->len > j)
                               ? values[0]->data[j]
@@ -474,8 +480,8 @@ void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void BitPosCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
         auto &args = cmd_args->args();
         int64_t bit = 0;

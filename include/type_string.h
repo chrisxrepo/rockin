@@ -8,6 +8,12 @@
 namespace rockin {
 class RockinConn;
 class CmdArgs;
+class MemObj;
+
+class StringCmd : public Cmd {
+ public:
+  StringCmd(CmdInfo info) : Cmd(info) {}
+};
 
 class StringCmd : public Cmd {
  public:
@@ -17,117 +23,124 @@ class StringCmd : public Cmd {
 };
 
 // GET key
-class GetCmd : public Cmd {
+class GetCmd : public StringCmd, public std::enable_shared_from_this<GetCmd> {
  public:
-  GetCmd(CmdInfo info) : Cmd(info) {}
+  GetCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // SET key value
-class SetCmd : public Cmd {
+class SetCmd : public StringCmd, public std::enable_shared_from_this<SetCmd> {
  public:
-  SetCmd(CmdInfo info) : Cmd(info) {}
+  SetCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // APPEND key value
-class AppendCmd : public Cmd {
+class AppendCmd : public StringCmd,
+                  public std::enable_shared_from_this<AppendCmd> {
  public:
-  AppendCmd(CmdInfo info) : Cmd(info) {}
+  AppendCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // GETSET key value
-class GetSetCmd : public Cmd {
+class GetSetCmd : public StringCmd,
+                  public std::enable_shared_from_this<GetSetCmd> {
  public:
-  GetSetCmd(CmdInfo info) : Cmd(info) {}
+  GetSetCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // MGET key1 [key2]...
-class MGetCmd : public Cmd {
+class MGetCmd : public StringCmd, public std::enable_shared_from_this<MGetCmd> {
  public:
-  MGetCmd(CmdInfo info) : Cmd(info) {}
+  MGetCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // MSET key1 value1 [kye2 value2]...
-class MSetCmd : public Cmd {
+class MSetCmd : public StringCmd, public std::enable_shared_from_this<MSetCmd> {
  public:
-  MSetCmd(CmdInfo info) : Cmd(info) {}
+  MSetCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // INCR key
-class IncrCmd : public Cmd {
+class IncrCmd : public StringCmd, public std::enable_shared_from_this<IncrCmd> {
  public:
-  IncrCmd(CmdInfo info) : Cmd(info) {}
+  IncrCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // INCRBY key value
-class IncrbyCmd : public Cmd {
+class IncrbyCmd : public StringCmd,
+                  public std::enable_shared_from_this<IncrbyCmd> {
  public:
-  IncrbyCmd(CmdInfo info) : Cmd(info) {}
+  IncrbyCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // DECR key
-class DecrCmd : public Cmd {
+class DecrCmd : public StringCmd, public std::enable_shared_from_this<DecrCmd> {
  public:
-  DecrCmd(CmdInfo info) : Cmd(info) {}
+  DecrCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // DECR key value
-class DecrbyCmd : public Cmd {
+class DecrbyCmd : public StringCmd,
+                  public std::enable_shared_from_this<DecrbyCmd> {
  public:
-  DecrbyCmd(CmdInfo info) : Cmd(info) {}
+  DecrbyCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // SETBIT key offset value
-class SetBitCmd : public Cmd {
+class SetBitCmd : public StringCmd,
+                  public std::enable_shared_from_this<SetBitCmd> {
  public:
-  SetBitCmd(CmdInfo info) : Cmd(info) {}
+  SetBitCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // GETBIT key offset
-class GetBitCmd : public Cmd {
+class GetBitCmd : public StringCmd,
+                  public std::enable_shared_from_this<GetBitCmd> {
  public:
-  GetBitCmd(CmdInfo info) : Cmd(info) {}
+  GetBitCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // BITCOUNT key [start end]
-class BitCountCmd : public Cmd {
+class BitCountCmd : public StringCmd,
+                    public std::enable_shared_from_this<BitCountCmd> {
  public:
-  BitCountCmd(CmdInfo info) : Cmd(info) {}
+  BitCountCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
@@ -137,18 +150,20 @@ class BitCountCmd : public Cmd {
 // BITOP OR destkey srckey1 srckey2 srckey3... srckeyN
 // BITOP XOR destkey srckey1 srckey2 srckey3... srckeyN
 // BITOP NOT destkey srckey
-class BitopCmd : public Cmd {
+class BitopCmd : public StringCmd,
+                 public std::enable_shared_from_this<BitopCmd> {
  public:
-  BitopCmd(CmdInfo info) : Cmd(info) {}
+  BitopCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
 
 // BITPOS key bit[start][end]
-class BitPosCmd : public Cmd {
+class BitPosCmd : public StringCmd,
+                  public std::enable_shared_from_this<BitPosCmd> {
  public:
-  BitPosCmd(CmdInfo info) : Cmd(info) {}
+  BitPosCmd(CmdInfo info) : StringCmd(info) {}
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;

@@ -22,7 +22,7 @@ all: tmp_dir $(DEP_LIB) rockin
 tmp_dir:
 	mkdir -p $(OBJ_DIR)
 
-CXXFLAGS := -std=c++11 -O2 -fPIC
+CXXFLAGS := -std=c++17 -O2 -fPIC
 LINKFLAGS := -lrocksdb -luv -lglog -lgflags -lpthread -ljemalloc 
 INCLUDE :=  -I include 
 
