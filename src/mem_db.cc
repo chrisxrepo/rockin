@@ -14,13 +14,12 @@ MemDB::MemDB() {
 
 MemDB::~MemDB() {}
 
-std::shared_ptr<MemObj> MemDB::Get(int dbindex, std::shared_ptr<membuf_t> key) {
+std::shared_ptr<MemObj> MemDB::Get(int dbindex, MemPtr key) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
   return dic->Get(key);
 }
 
-std::shared_ptr<MemObj> MemDB::GetReplyNil(int dbindex,
-                                           std::shared_ptr<membuf_t> key,
+std::shared_ptr<MemObj> MemDB::GetReplyNil(int dbindex, MemPtr key,
                                            std::shared_ptr<RockinConn> conn) {
   auto obj = Get(dbindex, key);
   if (obj == nullptr) {
@@ -31,7 +30,7 @@ std::shared_ptr<MemObj> MemDB::GetReplyNil(int dbindex,
   return obj;
 }
 
-std::shared_ptr<MemObj> MemDB::Set(int dbindex, std::shared_ptr<membuf_t> key,
+std::shared_ptr<MemObj> MemDB::Set(int dbindex, MemPtr key,
                                    std::shared_ptr<void> value,
                                    unsigned char type, unsigned char encode) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
@@ -48,7 +47,7 @@ std::shared_ptr<MemObj> MemDB::Set(int dbindex, std::shared_ptr<membuf_t> key,
 }
 
 // delete by key
-bool MemDB::Delete(int dbindex, std::shared_ptr<membuf_t> key) {
+bool MemDB::Delete(int dbindex, MemPtr key) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
   return dic->Delete(key);
 }
@@ -61,8 +60,7 @@ void MemDB::FlushDB(int dbindex) {
   dics_[dbindex] = std::make_shared<RedisDic<MemObj>>();
 }
 
-std::shared_ptr<membuf_t> GenString(std::shared_ptr<membuf_t> value,
-                                    int encode) {
+MemPtr GenString(MemPtr value, int encode) {
   if (value != nullptr && encode == Encode_Int) {
     return rockin::make_shared<membuf_t>(Int64ToString(BUF_INT64(value)));
   }
@@ -70,7 +68,7 @@ std::shared_ptr<membuf_t> GenString(std::shared_ptr<membuf_t> value,
   return value;
 }
 
-bool GenInt64(std::shared_ptr<membuf_t> str, int encode, int64_t &v) {
+bool GenInt64(MemPtr str, int encode, int64_t &v) {
   if (encode == Encode_Int) {
     v = BUF_INT64(str);
     return true;
@@ -91,9 +89,8 @@ bool CheckAndReply(std::shared_ptr<MemObj> obj,
     }
   }
 
-  static std::shared_ptr<membuf_t> g_reply_type_warn =
-      rockin::make_shared<membuf_t>(
-          "WRONGTYPE Operation against a key holding the wrong kind of value");
+  static MemPtr g_reply_type_warn = rockin::make_shared<membuf_t>(
+      "WRONGTYPE Operation against a key holding the wrong kind of value");
 
   conn->ReplyError(g_reply_type_warn);
   return false;

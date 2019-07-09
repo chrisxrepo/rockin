@@ -10,7 +10,7 @@
 namespace rockin {
 CmdArgs::CmdArgs() : mbulk_(-1) {}
 
-std::shared_ptr<membuf_t> CmdArgs::Parse(ByteBuf &buf) {
+MemPtr CmdArgs::Parse(ByteBuf &buf) {
   if (args_.size() == mbulk_) {
     return nullptr;
   }
@@ -29,7 +29,7 @@ std::shared_ptr<membuf_t> CmdArgs::Parse(ByteBuf &buf) {
   return nullptr;
 }
 
-std::shared_ptr<membuf_t> CmdArgs::ParseMultiCommand(ByteBuf &buf) {
+MemPtr CmdArgs::ParseMultiCommand(ByteBuf &buf) {
   char *ptr = buf.readptr();
   if (*ptr == '*') {
     char *end = Strchr2(ptr, buf.readable(), '\r', '\n');
@@ -87,7 +87,7 @@ std::shared_ptr<membuf_t> CmdArgs::ParseMultiCommand(ByteBuf &buf) {
   return nullptr;
 }
 
-std::shared_ptr<membuf_t> CmdArgs::ParseInlineCommand(ByteBuf &buf) {
+MemPtr CmdArgs::ParseInlineCommand(ByteBuf &buf) {
   char *ptr = buf.readptr();
   char *end = Strchr2(ptr, buf.readable(), '\r', '\n');
   if (end == nullptr) {

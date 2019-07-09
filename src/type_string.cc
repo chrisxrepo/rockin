@@ -50,7 +50,7 @@ void AppendCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           return;
         }
 
-        std::shared_ptr<membuf_t> str_value;
+        MemPtr str_value;
         if (obj == nullptr) {
           str_value = args[2];
           db->Set(conn->index(), args[1], str_value, Type_String, Encode_Raw);
@@ -118,7 +118,7 @@ void MGetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void MSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                  std::shared_ptr<RockinConn> conn) {
   if (cmd_args->args().size() % 2 != 1) {
-    static std::shared_ptr<membuf_t> g_reply_mset_args_err =
+    static MemPtr g_reply_mset_args_err =
         rockin::make_shared<membuf_t>("ERR wrong number of arguments for MSET");
 
     conn->ReplyError(g_reply_mset_args_err);
@@ -232,12 +232,11 @@ void DecrbyCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
       });
 }
 
-static std::shared_ptr<membuf_t> g_reply_bit_err =
-    rockin::make_shared<membuf_t>(
-        "bit offset is not an integer or out of range");
+static MemPtr g_reply_bit_err = rockin::make_shared<membuf_t>(
+    "bit offset is not an integer or out of range");
 
-static bool GetBitOffset(std::shared_ptr<membuf_t> v,
-                         std::shared_ptr<RockinConn> conn, int64_t &offset) {
+static bool GetBitOffset(MemPtr v, std::shared_ptr<RockinConn> conn,
+                         int64_t &offset) {
   if (StringToInt64(v->data, v->len, &offset) != 1) {
     conn->ReplyError(g_reply_bit_err);
     return false;
@@ -274,7 +273,7 @@ void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         }
 
         int byte = offset >> 3;
-        std::shared_ptr<membuf_t> str_value;
+        MemPtr str_value;
         if (obj == nullptr) {
           str_value = rockin::make_shared<membuf_t>(byte + 1);
           obj = db->Set(conn->index(), args[1], str_value, Type_String,
@@ -426,7 +425,7 @@ void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         }
 
         size_t maxlen = 0;
-        std::vector<std::shared_ptr<membuf_t>> values;
+        std::vector<MemPtr> values;
         for (int i = 3; i < args.size(); i++) {
           auto obj = db->Get(conn->index(), args[i]);
           if (obj == nullptr) {

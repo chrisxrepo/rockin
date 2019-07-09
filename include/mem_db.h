@@ -37,7 +37,7 @@ struct MemObj {
   uint8_t encode;
   uint16_t version;
   uint32_t ttl;
-  std::shared_ptr<membuf_t> key;
+  MemPtr key;
   std::shared_ptr<void> value;
   std::shared_ptr<MemObj> next;
 };
@@ -48,20 +48,19 @@ class MemDB {
   ~MemDB();
 
   // get
-  std::shared_ptr<MemObj> Get(int dbindex, std::shared_ptr<membuf_t> key);
+  std::shared_ptr<MemObj> Get(int dbindex, MemPtr key);
 
   // get if nil reply
-  std::shared_ptr<MemObj> GetReplyNil(int dbindex,
-                                      std::shared_ptr<membuf_t> key,
+  std::shared_ptr<MemObj> GetReplyNil(int dbindex, MemPtr key,
                                       std::shared_ptr<RockinConn> conn);
 
   // set
-  std::shared_ptr<MemObj> Set(int dbindex, std::shared_ptr<membuf_t> key,
+  std::shared_ptr<MemObj> Set(int dbindex, MemPtr key,
                               std::shared_ptr<void> value, unsigned char type,
                               unsigned char encode);
 
   // delete by key
-  bool Delete(int dbindex, std::shared_ptr<membuf_t> key);
+  bool Delete(int dbindex, MemPtr key);
 
   // flush db
   void FlushDB(int dbindex);
@@ -70,10 +69,9 @@ class MemDB {
   std::vector<std::shared_ptr<RedisDic<MemObj>>> dics_;
 };
 
-extern std::shared_ptr<membuf_t> GenString(std::shared_ptr<membuf_t> value,
-                                           int encode);
+extern MemPtr GenString(MemPtr value, int encode);
 
-extern bool GenInt64(std::shared_ptr<membuf_t> str, int encode, int64_t &v);
+extern bool GenInt64(MemPtr str, int encode, int64_t &v);
 
 extern bool CheckAndReply(std::shared_ptr<MemObj> obj,
                           std::shared_ptr<RockinConn> conn, int type);

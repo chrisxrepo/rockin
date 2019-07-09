@@ -62,7 +62,9 @@ struct membuf_t {
   }
 };
 
-extern uint64_t change_size(size_t size = 0);
+extern void change_size(size_t size);
+
+typedef std::shared_ptr<membuf_t> MemPtr;
 
 template <typename _Tp, typename... _Args>
 inline _LIBCPP_INLINE_VISIBILITY

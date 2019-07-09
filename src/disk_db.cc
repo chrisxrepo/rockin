@@ -101,6 +101,55 @@ DiskDB::~DiskDB() {
   }
 }
 
+#define DBNUM_INVALID(cmd, db, key, value)                           \
+  do {                                                               \
+    LOG(ERROR) << cmd << ", dbnum invalid:" << db << ", key:" << key \
+               << ", value:" << value;                               \
+  } while (0)
+
+bool DiskDB::WriteBatch(const std::vector<DiskWrite> &writes) {
+  if (writes.size() == 0) {
+    return true;
+  }
+
+  rocksdb::WriteBatch batch;
+  for (auto iter = writes.begin(); iter != writes.end(); ++iter) {
+    if (iter->db < 0 || iter->db >= mt_handles_.size()) {
+      DBNUM_INVALID("WriteBatch", iter->db,
+                    std::string(iter->key->data, iter->key->len),
+                    (iter->value == nullptr
+                         ? ""
+                         : std::string(iter->value->data, iter->value->len)));
+      continue;
+    }
+
+    if (iter->type == Write_Meta) {
+      batch.Put(mt_handles_[iter->db],
+                rocksdb::Slice(iter->key->data, iter->value->len),
+                rocksdb::Slice(iter->value->data, iter->value->len));
+    } else if (iter->type == Write_Data) {
+      batch.Put(db_handles_[iter->db],
+                rocksdb::Slice(iter->key->data, iter->value->len),
+                rocksdb::Slice(iter->value->data, iter->value->len));
+    } else if (iter->type == Del_Meta) {
+      batch.Delete(mt_handles_[iter->db],
+                   rocksdb::Slice(iter->key->data, iter->key->len));
+    } else if (iter->type == Del_Data) {
+      batch.Delete(db_handles_[iter->db],
+                   rocksdb::Slice(iter->key->data, iter->key->len));
+    } else {
+      LOG(WARNING) << "WriteBatch unknow type:" << iter->type;
+    }
+  }
+
+  auto status = db_->Write(rocksdb::WriteOptions(), &batch);
+  if (!status.ok()) {
+    LOG(ERROR) << "rocksdb Write:" << status.ToString();
+  }
+
+  return status.ok();
+}
+
 bool DiskDB::GetMeta(int db, const std::string &key, std::string *value) {
   if (db < 0 || db >= mt_handles_.size()) {
     return false;

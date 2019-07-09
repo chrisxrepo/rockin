@@ -26,8 +26,8 @@ class Cmd {
   // meta key ->  key
   // meta value-> |  version  |   ttl   |  type  |  encode  |
   //              |   2 byte  |  4 byte | 1 byte |  1 byte  |
-  virtual std::shared_ptr<membuf_t> MetaValue(std::shared_ptr<MemObj> obj) {
-    std::shared_ptr<membuf_t> v = rockin::make_shared<membuf_t>(8);
+  virtual MemPtr MetaValue(std::shared_ptr<MemObj> obj) {
+    MemPtr v = rockin::make_shared<membuf_t>(8);
     EncodeFixed16(v->data, 100);
     EncodeFixed32(v->data + 2, 0);
     EncodeFixed8(v->data + 6, obj->type);

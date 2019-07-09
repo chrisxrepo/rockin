@@ -35,8 +35,7 @@ void MemSaver::Init(size_t thread_num) {
   }
 }
 
-void MemSaver::DoCmd(std::shared_ptr<membuf_t> key,
-                     EventLoop::LoopCallback cb) {
+void MemSaver::DoCmd(MemPtr key, EventLoop::LoopCallback cb) {
   uint64_t h = hash_->Hash((const uint8_t *)key->data, key->len);
   auto pair = dbs_[h % dbs_.size()];
   pair.first->RunInLoopNoWait(cb, pair.second);

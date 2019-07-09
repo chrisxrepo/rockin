@@ -15,8 +15,7 @@ void CommandCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
 void PingCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                  std::shared_ptr<RockinConn> conn) {
-  static std::shared_ptr<membuf_t> g_reply_pong =
-      rockin::make_shared<membuf_t>("PONG");
+  static MemPtr g_reply_pong = rockin::make_shared<membuf_t>("PONG");
   conn->ReplyString(g_reply_pong);
 }
 
@@ -52,9 +51,9 @@ void SelectCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
   int64_t dbnum = 0;
   auto &args = cmd_args->args();
-  static std::shared_ptr<membuf_t> g_reply_dbindex_invalid =
+  static MemPtr g_reply_dbindex_invalid =
       rockin::make_shared<membuf_t>("ERR invalid DB index");
-  static std::shared_ptr<membuf_t> g_reply_dbindex_range =
+  static MemPtr g_reply_dbindex_range =
       rockin::make_shared<membuf_t>("ERR DB index is out of range");
 
   if (StringToInt64(args[1]->data, args[1]->len, &dbnum) != 1) {

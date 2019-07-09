@@ -35,7 +35,7 @@ class RedisDic {
     hash_ = new SipHash(seed);
   }
 
-  std::shared_ptr<Node> Get(std::shared_ptr<membuf_t> key) {
+  std::shared_ptr<Node> Get(MemPtr key) {
     if (table_[0]->used + table_[1]->used == 0) {
       return nullptr;
     }
@@ -54,7 +54,7 @@ class RedisDic {
     return nullptr;
   }
 
-  bool Delete(std::shared_ptr<membuf_t> key) {
+  bool Delete(MemPtr key) {
     if (table_[0]->used + table_[1]->used == 0) {
       return false;
     }
