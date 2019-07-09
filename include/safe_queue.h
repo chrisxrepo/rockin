@@ -11,8 +11,10 @@ class SpinLock {
   SpinLock() { uv_mutex_init(&lock_); }
 
   void Lock() {
-    while (uv_mutex_trylock(&lock_) != 0)
-      ;
+    for (int i = 0; i < 1000; i++) {
+      if (uv_mutex_trylock(&lock_) == 0) return;
+    }
+    uv_mutex_lock(&lock_);
   }
 
   void UnLock() { uv_mutex_unlock(&lock_); }
