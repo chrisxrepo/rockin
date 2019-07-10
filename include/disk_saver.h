@@ -27,9 +27,12 @@ class DiskSaver {
   // get diskdb
   std::shared_ptr<DiskDB> GetDB(MemPtr key);
 
-  bool WriteMeta(int dbindex, MemPtr key, KVPairS mates);
-  bool WriteData(int dbindex, MemPtr key, KVPairS datas);
-  bool WriteAll(int dbindex, MemPtr key, KVPairS mates, KVPairS datas);
+  bool WriteMeta(int dbindex, MemPtr key, KVPairS mates,
+                 std::shared_ptr<void> retain);
+  bool WriteData(int dbindex, MemPtr key, KVPairS datas,
+                 std::shared_ptr<void> retain);
+  bool WriteAll(int dbindex, MemPtr key, KVPairS mates, KVPairS datas,
+                std::shared_ptr<void> retain);
 
  private:
   void RunLoop();

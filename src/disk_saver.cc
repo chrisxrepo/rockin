@@ -15,7 +15,7 @@ class _WriteData {
  public:
   MemPtr key;
   std::vector<DiskWrite> writes;
-  uv_sem_t *sem;
+  std::shared_ptr<void> retain;
 };
 
 DiskSaver *DiskSaver::Default() {
@@ -105,19 +105,20 @@ void DiskSaver::WriteDiskData() {
   int partition_num = partitions_.size();
   while (true) {
     std::map<int, std::vector<DiskWrite>> write_map;
-    std::map<int, std::vector<uv_sem_t *>> sem_map;
+    std::vector<std::shared_ptr<void>> retains;
     while (true) {
       _WriteData *wd = write_queue_.Pop();
       if (wd == nullptr) break;
 
+      retains.push_back(wd->retain);
       int partition = partition_index(wd->key, partition_num);
-      sem_map[partition].push_back(wd->sem);
       for (auto iter = wd->writes.begin(); iter != wd->writes.end(); ++iter) {
         write_map[partition].push_back(*iter);
       }
+      delete wd;
     }
 
-    if (sem_map.size() == 0 || write_map.size() == 0) break;
+    if (write_map.size() == 0) break;
 
     for (auto iter = write_map.begin(); iter != write_map.end(); ++iter) {
       // handle write
@@ -126,11 +127,6 @@ void DiskSaver::WriteDiskData() {
         db->WriteBatch(iter->second);
       } else {
         LOG(ERROR) << "Partition" << iter->first << " is not in this instance.";
-      }
-
-      const auto &sems = sem_map[iter->first];
-      for (auto iter2 = sems.begin(); iter2 != sems.end(); ++iter2) {
-        uv_sem_post(*iter2);
       }
     }
   }
@@ -141,35 +137,34 @@ std::shared_ptr<DiskDB> DiskSaver::GetDB(MemPtr key) {
   return partitions_[index];
 }
 
-bool DiskSaver::WriteMeta(int dbindex, MemPtr key, KVPairS mates) {
-  return WriteAll(dbindex, key, mates, KVPairS());
+bool DiskSaver::WriteMeta(int dbindex, MemPtr key, KVPairS mates,
+                          std::shared_ptr<void> retain) {
+  return WriteAll(dbindex, key, mates, KVPairS(), retain);
 }
 
-bool DiskSaver::WriteData(int dbindex, MemPtr key, KVPairS datas) {
-  return WriteAll(dbindex, key, KVPairS(), datas);
+bool DiskSaver::WriteData(int dbindex, MemPtr key, KVPairS datas,
+                          std::shared_ptr<void> retain) {
+  return WriteAll(dbindex, key, KVPairS(), datas, retain);
 }
 
-bool DiskSaver::WriteAll(int dbindex, MemPtr key, KVPairS mates,
-                         KVPairS datas) {
-  _WriteData wd;
-  wd.key = key;
+bool DiskSaver::WriteAll(int dbindex, MemPtr key, KVPairS mates, KVPairS datas,
+                         std::shared_ptr<void> retain) {
+  _WriteData *wd = new _WriteData;
+  wd->key = key;
+  wd->retain = retain;
+
   for (auto iter = mates.begin(); iter != mates.end(); ++iter) {
-    wd.writes.push_back(
+    wd->writes.push_back(
         DiskWrite(dbindex, Write_Meta, iter->first, iter->second));
   }
   for (auto iter = datas.begin(); iter != datas.end(); ++iter) {
-    wd.writes.push_back(
+    wd->writes.push_back(
         DiskWrite(dbindex, Write_Data, iter->first, iter->second));
   }
 
-  uv_sem_t sem;
-  uv_sem_init(&sem, 0);
-  wd.sem = &sem;
-
-  while (!write_queue_.Push(&wd))
+  while (!write_queue_.Push(wd))
     ;
   uv_async_send(&write_async_);
-  uv_sem_wait(&sem);
   return true;
 }
 

@@ -62,10 +62,11 @@ bool StringCmd::Update(int dbindex, std::shared_ptr<MemObj> obj,
     EncodeFixed16(meta->data + BASE_META_VALUE_SIZE,
                   STRING_BULK(str_value->len));
 
-    DiskSaver::Default()->WriteAll(
-        dbindex, obj->key, KVPairS{std::make_pair(obj->key, meta)}, kvs);
+    DiskSaver::Default()->WriteAll(dbindex, obj->key,
+                                   KVPairS{std::make_pair(obj->key, meta)}, kvs,
+                                   str_value);
   } else {
-    DiskSaver::Default()->WriteData(dbindex, obj->key, kvs);
+    DiskSaver::Default()->WriteData(dbindex, obj->key, kvs, str_value);
   }
 
   return true;
