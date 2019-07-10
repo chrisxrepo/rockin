@@ -87,6 +87,11 @@ bool GenInt64(MemPtr str, int encode, int64_t &v) {
 
 bool CheckAndReply(std::shared_ptr<MemObj> obj,
                    std::shared_ptr<RockinConn> conn, int type) {
+  if (obj == nullptr) {
+    conn->ReplyNil();
+    return false;
+  }
+
   if (obj->type == type) {
     if (type == Type_String &&
         (obj->encode == Encode_Raw || obj->encode == Encode_Int)) {

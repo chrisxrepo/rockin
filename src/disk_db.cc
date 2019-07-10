@@ -101,12 +101,6 @@ DiskDB::~DiskDB() {
   }
 }
 
-#define DBNUM_INVALID(cmd, db, key, value)                           \
-  do {                                                               \
-    LOG(ERROR) << cmd << ", dbnum invalid:" << db << ", key:" << key \
-               << ", value:" << value;                               \
-  } while (0)
-
 bool DiskDB::WriteBatch(const std::vector<DiskWrite> &writes) {
   if (writes.size() == 0) {
     return true;
@@ -115,21 +109,22 @@ bool DiskDB::WriteBatch(const std::vector<DiskWrite> &writes) {
   rocksdb::WriteBatch batch;
   for (auto iter = writes.begin(); iter != writes.end(); ++iter) {
     if (iter->db < 0 || iter->db >= mt_handles_.size()) {
-      DBNUM_INVALID("WriteBatch", iter->db,
-                    std::string(iter->key->data, iter->key->len),
-                    (iter->value == nullptr
+      LOG(ERROR) << "dbnum invalid:" << iter->db
+                 << ", key:" << std::string(iter->key->data, iter->key->len)
+                 << ", value:"
+                 << (iter->value == nullptr
                          ? ""
-                         : std::string(iter->value->data, iter->value->len)));
+                         : std::string(iter->value->data, iter->value->len));
       continue;
     }
 
     if (iter->type == Write_Meta) {
       batch.Put(mt_handles_[iter->db],
-                rocksdb::Slice(iter->key->data, iter->value->len),
+                rocksdb::Slice(iter->key->data, iter->key->len),
                 rocksdb::Slice(iter->value->data, iter->value->len));
     } else if (iter->type == Write_Data) {
       batch.Put(db_handles_[iter->db],
-                rocksdb::Slice(iter->key->data, iter->value->len),
+                rocksdb::Slice(iter->key->data, iter->key->len),
                 rocksdb::Slice(iter->value->data, iter->value->len));
     } else if (iter->type == Del_Meta) {
       batch.Delete(mt_handles_[iter->db],
@@ -152,72 +147,12 @@ bool DiskDB::WriteBatch(const std::vector<DiskWrite> &writes) {
 
 bool DiskDB::GetMeta(int db, MemPtr key, std::string *value) {
   if (db < 0 || db >= mt_handles_.size()) {
+    LOG(ERROR) << "GetMeta dbnum invalid:" << db
+               << ", key:" << std::string(key->data, key->len);
     return false;
   }
 
-  return Get(mt_handles_[db], key, value);
-}
-/*
-bool DiskDB::GetData(int db, MemPtr key, std::string *value) {
-  if (db < 0 || db >= db_handles_.size()) {
-    return false;
-  }
-
-  return Get(db_handles_[db], key, value);
-}
-
-bool DiskDB::SetMeta(int db, const std::string &key, const std::string &value) {
-  if (db < 0 || db >= mt_handles_.size()) {
-    return false;
-  }
-
-  return Set(mt_handles_[db], key, value);
-}
-
-bool DiskDB::SetData(int db, const std::string &key, const std::string &value) {
-  if (db < 0 || db >= db_handles_.size()) {
-    return false;
-  }
-
-  return Set(db_handles_[db], key, value);
-}
-
-bool DiskDB::SetAll(
-    int db, const std::vector<std::pair<std::string, std::string>> &metas,
-    const std::vector<std::pair<std::string, std::string>> &datas) {
-  if (db < 0 || db >= db_handles_.size()) {
-    return false;
-  }
-
-  rocksdb::WriteBatch batch;
-  for (auto iter = metas.begin(); iter != metas.end(); ++iter) {
-    auto status = batch.Put(mt_handles_[db], iter->first, iter->second);
-    if (!status.ok()) {
-      LOG(ERROR) << "rocksdb WriteBatch.Put:" << status.ToString();
-      return false;
-    }
-  }
-  for (auto iter = datas.begin(); iter != datas.end(); ++iter) {
-    auto status = batch.Put(mt_handles_[db], iter->first, iter->second);
-    if (!status.ok()) {
-      LOG(ERROR) << "rocksdb WriteBatch.Put:" << status.ToString();
-      return false;
-    }
-  }
-
-  auto status = db_->Write(rocksdb::WriteOptions(), &batch);
-  if (!status.ok()) {
-    LOG(ERROR) << "rocksdb Write:" << status.ToString();
-    return false;
-  }
-
-  return true;
-}
-*/
-
-bool DiskDB::Get(rocksdb::ColumnFamilyHandle *cf, MemPtr key,
-                 std::string *value) {
-  auto status = db_->Get(rocksdb::ReadOptions(), cf,
+  auto status = db_->Get(rocksdb::ReadOptions(), mt_handles_[db],
                          rocksdb::Slice(key->data, key->len), value);
 
   if (status.IsNotFound()) {
@@ -225,24 +160,70 @@ bool DiskDB::Get(rocksdb::ColumnFamilyHandle *cf, MemPtr key,
   }
 
   if (!status.ok()) {
-    LOG(ERROR) << "rocksdb Get:" << status.ToString();
+    LOG(ERROR) << "GetMeta Get[" << std::string(key->data, key->len)
+               << "] error:" << status.ToString();
     return false;
   }
 
   return true;
 }
 
-bool DiskDB::Set(rocksdb::ColumnFamilyHandle *cf, MemPtr key, MemPtr value) {
-  auto status =
-      db_->Put(rocksdb::WriteOptions(), cf, rocksdb::Slice(key->data, key->len),
-               rocksdb::Slice(value->data, value->len));
+bool DiskDB::GetData(int db, MemPtr key, std::string *value) {
+  if (db < 0 || db >= db_handles_.size()) {
+    LOG(ERROR) << "GetData dbnum invalid:" << db
+               << ", key:" << std::string(key->data, key->len);
+    return false;
+  }
+
+  auto status = db_->Get(rocksdb::ReadOptions(), db_handles_[db],
+                         rocksdb::Slice(key->data, key->len), value);
+
+  if (status.IsNotFound()) {
+    return false;
+  }
 
   if (!status.ok()) {
-    LOG(ERROR) << "rocksdb Put:" << status.ToString();
+    LOG(ERROR) << "GetData Get[" << std::string(key->data, key->len)
+               << "] error:" << status.ToString();
     return false;
   }
 
   return true;
+}
+
+std::vector<bool> DiskDB::GetDatas(int db, std::vector<MemPtr> &keys,
+                                   std::vector<std::string> *values) {
+  if (db < 0 || db >= db_handles_.size()) {
+    LOG(ERROR) << "GetDatas dbnum invalid:" << db
+               << ", keys num:" << keys.size();
+    return std::vector<bool>(keys.size());
+  }
+
+  std::vector<rocksdb::Slice> slices;
+  std::vector<rocksdb::ColumnFamilyHandle *> cfs;
+  for (size_t i = 0; i < keys.size(); i++) {
+    cfs.push_back(db_handles_[db]);
+    slices.push_back(rocksdb::Slice(keys[i]->data, keys[i]->len));
+  }
+
+  auto statuss = db_->MultiGet(rocksdb::ReadOptions(), cfs, slices, values);
+
+  std::vector<bool> results;
+  for (size_t i = 0; i < statuss.size(); i++) {
+    if (statuss[i].ok()) {
+      results.push_back(true);
+      continue;
+    }
+
+    if (!statuss[i].IsNotFound()) {
+      LOG(ERROR) << "GetDatas MGet[" << std::string(keys[i]->data, keys[i]->len)
+                 << "] error:" << statuss[i].ToString();
+    }
+
+    results.push_back(false);
+  }
+
+  return results;
 }
 
 }  // namespace rockin

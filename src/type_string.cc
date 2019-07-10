@@ -10,10 +10,10 @@
 
 namespace rockin {
 
-#define STRING_MAX_BULK_SIZE 2048
+#define STRING_MAX_BULK_SIZE 128
 
-#define STRING_META_SIZE 12
-#define STRING_META_BULK(str) DecodeFixed16((const char *)(str))
+#define STRING_META_VALUE_SIZE 2
+#define STRING_KEY_BULK_SIZE 2
 
 #define STRING_BULK(len) \
   ((len) / STRING_MAX_BULK_SIZE + (((len) % STRING_MAX_BULK_SIZE) ? 1 : 0))
@@ -23,61 +23,125 @@ namespace rockin {
 
 // meta key ->  key
 //
-// meta value-> |   bulk   |   type   |  encode   |  version  |    ttl   |
-//              |  2 byte  |   1 byte |   1 byte  |   4 byte  |  4 byte  |
+// meta value-> |     meta value header     |   bulk   |
+//              |     BASE_META_SIZE byte   |  2 byte  |
 //
-MemPtr StringCmd::MetaValue(std::shared_ptr<MemObj> obj) {
-  MemPtr v = rockin::make_shared<membuf_t>(STRING_META_SIZE);
-  auto str_value = OBJ_STRING(obj);
-  EncodeFixed16(v->data, STRING_BULK(str_value->len));
-  EncodeFixed8(v->data + 2, obj->type);
-  EncodeFixed8(v->data + 3, obj->encode);
-  EncodeFixed32(v->data + 4, obj->version);
-  EncodeFixed32(v->data + 8, obj->ttl);
-
-  return v;
-}
-
-// data value-> |  Head(S) |  key len  |   key    |  version  |   bulk id |
-//              |  1 byte  |   4 byte  |   n byte |   4 byte  |   2 byte  |
+// data value-> |     data key header       |  bulk id |
+//              |  BASE_DATA_KEY_SIZE byte  |  2 byte  |
 //
 // meta value->  split byte size
 //
-KVPairS StringCmd::DataKeyValue(std::shared_ptr<MemObj> obj) {
+bool StringCmd::Update(int dbindex, std::shared_ptr<MemObj> obj,
+                       bool update_meta) {
   auto str_value = OBJ_STRING(obj);
   size_t bulk = STRING_BULK(str_value->len);
 
   KVPairS kvs;
   for (size_t i = 0; i < bulk; i++) {
-    auto key = rockin::make_shared<membuf_t>(11 + obj->key->len);
-    key->data[0] = 'S';
-    EncodeFixed32(key->data + 1, obj->key->len);
-    memcpy(key->data + 5, obj->key->data, obj->key->len);
-    EncodeFixed32(key->data + (obj->key->len + 5), obj->version);
-    EncodeFixed16(key->data + (obj->key->len + 9), i);
+    auto key = rockin::make_shared<membuf_t>(BASE_DATA_KEY_SIZE(obj->key->len) +
+                                             STRING_KEY_BULK_SIZE);
+
+    SET_DATA_KEY_HEADER(key->data, STRING_FLAGS, obj->key->data, obj->key->len,
+                        obj->version);
+    EncodeFixed16(key->data + BASE_DATA_KEY_SIZE(obj->key->len), i);
 
     auto value = rockin::make_shared<membuf_t>();
     value->data = str_value->data + (i * STRING_MAX_BULK_SIZE);
-    value->len = (i < bulk ? STRING_MAX_BULK_SIZE
-                           : (str_value->len % STRING_MAX_BULK_SIZE));
+    value->len = (i == (bulk - 1) ? (str_value->len % STRING_MAX_BULK_SIZE)
+                                  : STRING_MAX_BULK_SIZE);
 
     kvs.push_back(std::make_pair(key, value));
   }
-  return std::move(kvs);
+
+  if (update_meta) {
+    MemPtr meta = rockin::make_shared<membuf_t>(BASE_META_VALUE_SIZE +
+                                                STRING_META_VALUE_SIZE);
+    auto str_value = OBJ_STRING(obj);
+    SET_META_VALUE_HEADER(meta->data, obj->type, obj->encode, obj->version,
+                          obj->ttl);
+    EncodeFixed16(meta->data + BASE_META_VALUE_SIZE,
+                  STRING_BULK(str_value->len));
+
+    DiskSaver::Default()->WriteAll(
+        dbindex, obj->key, KVPairS{std::make_pair(obj->key, meta)}, kvs);
+  } else {
+    DiskSaver::Default()->WriteData(dbindex, obj->key, kvs);
+  }
+
+  return true;
 }
 
-std::shared_ptr<MemObj> StringCmd::GetStringMeta(int dbindex, MemPtr key,
-                                                 uint16_t &bulk) {
+std::shared_ptr<MemObj> StringCmd::GetMeta(int dbindex, MemPtr key,
+                                           uint16_t &bulk) {
   std::string meta;
-  auto obj = GetBaseMeta(dbindex, key, &meta);
-  if (obj != nullptr && obj->type == Type_String &&
-      meta.length() == STRING_META_SIZE) {
-    bulk = STRING_META_BULK(meta.c_str());
-  } else {
-    bulk = 0;
+  auto diskdb = DiskSaver::Default()->GetDB(key);
+  if (diskdb->GetMeta(dbindex, key, &meta) &&
+      meta.length() >= BASE_META_VALUE_SIZE) {
+    auto obj = rockin::make_shared<MemObj>();
+    obj->key = key;
+    obj->type = META_VALUE_TYPE(meta.c_str());
+    obj->encode = META_VALUE_ENCODE(meta.c_str());
+    obj->version = META_VALUE_VERSION(meta.c_str());
+    obj->ttl = META_VALUE_TTL(meta.c_str());
+
+    if (meta.length() == BASE_META_VALUE_SIZE + STRING_META_VALUE_SIZE)
+      bulk = DecodeFixed16(meta.c_str() + BASE_META_VALUE_SIZE);
+
+    return obj;
   }
+
+  return nullptr;
+}
+
+std::shared_ptr<MemObj> StringCmd::GetValue(int dbindex, MemPtr key,
+                                            bool &type_err,
+                                            std::shared_ptr<RockinConn> conn) {
+  type_err = false;
+  uint16_t bulk = 0;
+  auto obj = GetMeta(dbindex, key, bulk);
+  if (obj == nullptr) {
+    return nullptr;
+  }
+
+  if (obj->type != Type_String) {
+    conn->ReplyTypeError();
+    type_err = true;
+    return nullptr;
+  }
+
+  std::vector<MemPtr> keys;
+  std::vector<std::string> values;
+  for (int i = 0; i < bulk; i++) {
+    auto key = rockin::make_shared<membuf_t>(BASE_DATA_KEY_SIZE(obj->key->len) +
+                                             STRING_KEY_BULK_SIZE);
+    SET_DATA_KEY_HEADER(key->data, STRING_FLAGS, obj->key->data, obj->key->len,
+                        obj->version);
+    EncodeFixed16(key->data + BASE_DATA_KEY_SIZE(obj->key->len), i);
+    keys.push_back(key);
+  }
+
+  auto diskdb = DiskSaver::Default()->GetDB(obj->key);
+  auto rets = diskdb->GetDatas(dbindex, keys, &values);
+
+  LOG_IF(FATAL, rets.size() != keys.size()) << "GetDatas rets.size!=keys.size";
+  if (values.size() != rets.size()) return nullptr;
+
+  size_t value_length = 0;
+  for (size_t i = 0; i < rets.size(); i++) {
+    if (!rets[i]) return nullptr;
+    value_length += values[i].length();
+  }
+
+  size_t offset = 0;
+  auto value = rockin::make_shared<membuf_t>(value_length);
+  for (size_t i = 0; i < values.size(); i++) {
+    memcpy(value->data + offset, values[i].c_str(), values[i].length());
+    offset += values[i].length();
+  }
+  obj->value = value;
   return obj;
 }
+
 ///////////////////////////////////////////////////////////////////////////////
 void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {
@@ -85,9 +149,20 @@ void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
       cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
                                EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
-        auto obj = db->GetReplyNil(conn->index(), cmd_args->args()[1], conn);
 
-        if (obj == nullptr || !CheckAndReply(obj, conn, Type_String)) {
+        auto &args = cmd_args->args();
+        auto obj = db->Get(conn->index(), args[1]);
+        if (obj == nullptr) {
+          bool type_err = false;
+          obj = cmd->GetValue(conn->index(), args[1], type_err, conn);
+          if (obj == nullptr || type_err) {
+            if (!type_err) conn->ReplyNil();
+            return;
+          }
+          db->Insert(conn->index(), obj);
+        }
+
+        if (!CheckAndReply(obj, conn, Type_String)) {
           return;
         }
 
@@ -107,7 +182,7 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         auto obj = db->Get(conn->index(), args[1]);
         if (obj == nullptr) {
           uint16_t bulk;
-          obj = cmd->GetStringMeta(conn->index(), args[1], bulk);
+          obj = cmd->GetMeta(conn->index(), args[1], bulk);
           update_meta = !CHECK_STRING_META(obj, Type_String, Encode_Raw, bulk,
                                            STRING_BULK(args[2]->len));
 
@@ -123,16 +198,7 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         }
 
         obj->value = args[2];
-        if (update_meta) {
-          DiskSaver::Default()->WriteAll(
-              conn->index(), args[1],
-              KVPairS{std::make_pair(obj->key, cmd->MetaValue(obj))},
-              cmd->DataKeyValue(obj));
-        } else {
-          DiskSaver::Default()->WriteData(conn->index(), args[1],
-                                          cmd->DataKeyValue(obj));
-        }
-
+        cmd->Update(conn->index(), obj, update_meta);
         conn->ReplyOk();
       });
 }

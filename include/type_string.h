@@ -15,15 +15,15 @@ class StringCmd : public Cmd {
  public:
   StringCmd(CmdInfo info) : Cmd(info) {}
 
-  // meta key ->  key
-  // meta value-> |   bulk   |   type   |  encode   |  version  |    ttl   |
-  //              |  2 byte  |   1 byte |   1 byte  |   4 byte  |  4 byte  |
-  MemPtr MetaValue(std::shared_ptr<MemObj> obj);
+  // get meta from disk saver
+  std::shared_ptr<MemObj> GetMeta(int dbindex, MemPtr key, uint16_t &bulk);
 
-  KVPairS DataKeyValue(std::shared_ptr<MemObj> obj);
+  // get value from disk saver
+  std::shared_ptr<MemObj> GetValue(int dbindex, MemPtr key, bool &type_err,
+                                   std::shared_ptr<RockinConn> conn);
 
-  std::shared_ptr<MemObj> GetStringMeta(int dbindex, MemPtr key,
-                                        uint16_t &bulk);
+  // udpate string
+  bool Update(int dbindex, std::shared_ptr<MemObj> obj, bool update_meta);
 };
 
 // GET key

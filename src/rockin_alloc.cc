@@ -1,4 +1,5 @@
 #include "rockin_alloc.h"
+#include <atomic>
 #include <mutex>
 
 namespace rockin {

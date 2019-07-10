@@ -5,6 +5,7 @@
 #include <iostream>
 #include <memory>
 #include <type_traits>
+#include <vector>
 
 namespace rockin {
 struct membuf_t {
@@ -69,11 +70,10 @@ typedef std::shared_ptr<membuf_t> MemPtr;
 typedef std::vector<std::pair<MemPtr, MemPtr>> KVPairS;
 
 template <typename _Tp, typename... _Args>
-inline _LIBCPP_INLINE_VISIBILITY
-    typename std::enable_if<!std::is_array<_Tp>::value,
-                            std::shared_ptr<_Tp>>::type
-    make_shared(_Args &&... __args) {
-  std::shared_ptr<_Tp> ptr(new _Tp(_VSTD::forward<_Args>(__args)...),
+inline typename std::enable_if<!std::is_array<_Tp>::value,
+                               std::shared_ptr<_Tp>>::type
+make_shared(_Args &&... __args) {
+  std::shared_ptr<_Tp> ptr(new _Tp(std::forward<_Args>(__args)...),
                            [](_Tp *ptr) {
                              change_size(0 - ptr->Size());
                              delete ptr;

@@ -41,7 +41,7 @@ void DelCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
           rets->cnt--;
           if (rets->cnt.load() == 0) {
-            conn->ReplyArray(rets->str_values);
+            conn->ReplyInteger(rets->int_value.load());
           }
         });
   }

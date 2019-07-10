@@ -5,10 +5,44 @@
 #include "mem_db.h"
 #include "utils.h"
 
-#define META_TYPE(str, len) DecodeFixed8((const char *)(str) + ((len)-10))
-#define META_ENCODE(str, len) DecodeFixed8((const char *)(str) + ((len)-9))
-#define META_VERSION(str, len) DecodeFixed32((const char *)(str) + ((len)-8))
-#define META_TTL(str, len) DecodeFixed32((const char *)(str) + ((len)-4))
+// meta value header
+// |   type   |  encode   |  version  |    ttl   |
+// |   1 byte |   1 byte  |   4 byte  |  4 byte  |
+#define BASE_META_VALUE_SIZE 10
+#define META_VALUE_TYPE(base) DecodeFixed8((const char *)(base))
+#define META_VALUE_ENCODE(base) DecodeFixed8((const char *)(base) + 1)
+#define META_VALUE_VERSION(base) DecodeFixed32((const char *)(base) + 2)
+#define META_VALUE_TTL(base) DecodeFixed32((const char *)(base) + 6)
+
+#define SET_META_VALUE_HEADER(begin, type, encode, version, ttl) \
+  do {                                                           \
+    EncodeFixed8((char *)(begin), type);                         \
+    EncodeFixed8((char *)(begin) + 1, encode);                   \
+    EncodeFixed32((char *)(begin) + 2, version);                 \
+    EncodeFixed32((char *)(begin) + 6, ttl);                     \
+  } while (0)
+
+// data key header
+// |  Head(S) |  key len  |   key    |  version  |
+// |  1 byte  |   4 byte  |   n byte |   4 byte  |
+#define BASE_DATA_KEY_SIZE(n) (9 + (n))
+#define DATA_KEY_HEAD(begin) ((const char *)(begin))[0]
+#define DATA_KEY_LNE(begin) DecodeFixed32((const char *)(begin) + 1)
+#define DATA_KEY_START(begin) ((const char *)(begin) + 5)
+#define DATA_KEY_VERSION(begin) \
+  DecodeFixed32((const char *)(begin) + (DATA_KEY_LNE(begin) + 5))
+
+#define SET_DATA_KEY_HEADER(begin, type, key, len, version) \
+  do {                                                      \
+    ((char *)(begin))[0] = type;                            \
+    EncodeFixed32((char *)(begin) + 1, len);                \
+    memcpy((char *)(begin) + 5, key, len);                  \
+    EncodeFixed32((char *)(begin) + (len + 5), version);    \
+  } while (0)
+
+#define STRING_FLAGS 's'
+#define LIST_FLAGS 'l'
+#define HASH_FLAGS 'h'
 
 namespace rockin {
 class CmdArgs;
@@ -28,22 +62,6 @@ class Cmd {
 
   virtual void Do(std::shared_ptr<CmdArgs> cmd_args,
                   std::shared_ptr<RockinConn> conn) = 0;
-
-  std::shared_ptr<MemObj> GetBaseMeta(int dbindex, MemPtr key,
-                                      std::string *meta_value) {
-    auto diskdb = DiskSaver::Default()->GetDB(key);
-    if (diskdb->GetMeta(dbindex, key, meta_value) &&
-        meta_value->length() > 10) {
-      auto obj = rockin::make_shared<MemObj>();
-      obj->key = key;
-      obj->type = META_TYPE(meta_value->c_str(), meta_value->length());
-      obj->encode = META_ENCODE(meta_value->c_str(), meta_value->length());
-      obj->version = META_VERSION(meta_value->c_str(), meta_value->length());
-      obj->ttl = META_TTL(meta_value->c_str(), meta_value->length());
-    }
-
-    return nullptr;
-  }
 
   const CmdInfo &info() { return info_; }
 

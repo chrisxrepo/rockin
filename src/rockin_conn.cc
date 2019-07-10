@@ -272,6 +272,15 @@ void RockinConn::ReplyError(MemPtr err) {
   WriteData(std::move(datas));
 }
 
+void RockinConn::ReplyTypeError() {
+  static MemPtr g_reply_type_warn = rockin::make_shared<membuf_t>(
+      "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+
+  std::vector<MemPtr> datas;
+  datas.push_back(g_reply_type_warn);
+  WriteData(std::move(datas));
+}
+
 void RockinConn::ReplyErrorAndClose(MemPtr err) {
   ReplyError(err);
   Close();

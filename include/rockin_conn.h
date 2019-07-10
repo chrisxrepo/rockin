@@ -30,6 +30,7 @@ class RockinConn : public std::enable_shared_from_this<RockinConn> {
   void ReplyIntegerError();
   void ReplySyntaxError();
   void ReplyError(MemPtr err);
+  void ReplyTypeError();
   void ReplyErrorAndClose(MemPtr err);
   void ReplyString(MemPtr str);
   void ReplyInteger(int64_t num);
