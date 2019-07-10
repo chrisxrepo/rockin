@@ -147,14 +147,17 @@ class _WriteData {
 };
 
 bool RockinConn::WriteData(std::vector<MemPtr> &&datas) {
+  if (t_ == nullptr) {
+    return false;
+  }
+
   EventLoop *el = (EventLoop *)t_->loop->data;
   std::weak_ptr<RockinConn> weak_conn = shared_from_this();
-
   el->RunInLoopNoWait(
       [weak_conn, datas = std::move(datas)](EventLoop *et,
                                             std::shared_ptr<void> arg) {
         auto conn = weak_conn.lock();
-        if (conn == nullptr) {
+        if (conn == nullptr || conn->handle() == nullptr) {
           return;
         }
 
