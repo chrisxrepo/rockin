@@ -1,12 +1,15 @@
 #pragma once
 #include <uv.h>
 #include <functional>
+#include <vector>
 #include "byte_buf.h"
 #include "rockin_alloc.h"
 #include "utils.h"
 
 namespace rockin {
+class MemObj;
 class CmdArgs;
+
 class RockinConn : public std::enable_shared_from_this<RockinConn> {
  public:
   RockinConn(uv_tcp_t *t,
@@ -36,6 +39,7 @@ class RockinConn : public std::enable_shared_from_this<RockinConn> {
   void ReplyInteger(int64_t num);
   void ReplyBulk(MemPtr str);
   void ReplyArray(std::vector<MemPtr> &values);
+  void ReplyObj(std::shared_ptr<MemObj> obj);
 
  private:
   void OnAlloc(size_t suggested_size, uv_buf_t *buf);

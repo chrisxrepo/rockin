@@ -106,17 +106,4 @@ bool CheckAndReply(std::shared_ptr<MemObj> obj,
   return false;
 }
 
-void ReplyMemObj(std::shared_ptr<MemObj> obj,
-                 std::shared_ptr<RockinConn> conn) {
-  if (obj == nullptr) {
-    conn->ReplyNil();
-  } else if (obj->type == Type_String && obj->encode == Encode_Raw) {
-    auto str_value = std::static_pointer_cast<membuf_t>(obj->value);
-    conn->ReplyBulk(str_value);
-  } else if (obj->type == Type_String && obj->encode == Encode_Int) {
-    auto str_value = std::static_pointer_cast<membuf_t>(obj->value);
-    conn->ReplyInteger(BUF_INT64(str_value));
-  }
-}
-
 }  // namespace rockin

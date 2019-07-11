@@ -19,7 +19,7 @@ namespace rockin {
   ((len) / STRING_MAX_BULK_SIZE + (((len) % STRING_MAX_BULK_SIZE) ? 1 : 0))
 
 #define CHECK_STRING_META(o, t, e, ob, nb) \
-  (o != nullptr && o->type == t && o->encode == e && ob == nb)
+  ((o) != nullptr && (o)->type == (t) && (o)->encode == (e) && (ob) == (nb))
 
 // meta key ->  key
 //
@@ -114,7 +114,6 @@ std::shared_ptr<MemObj> StringCmd::GetValue(int dbindex, MemPtr key,
   }
 
   if (obj->type != Type_String) {
-    conn->ReplyTypeError();
     type_err = true;
     return nullptr;
   }
@@ -192,7 +191,10 @@ void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           uint32_t version = 0;
           obj = cmd->GetValue(conn->index(), args[1], conn, type_err, version);
           if (obj == nullptr || obj->type == Type_None) {
-            if (!type_err) conn->ReplyNil();
+            if (type_err)
+              conn->ReplyTypeError();
+            else
+              conn->ReplyNil();
             return;
           }
           db->Insert(conn->index(), obj);
@@ -246,7 +248,10 @@ void AppendCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         if (obj == nullptr) {
           bool type_err = false;
           obj = cmd->GetValue(conn->index(), args[1], conn, type_err, version);
-          if (type_err) return;
+          if (type_err) {
+            conn->ReplyTypeError();
+            return;
+          }
           if (obj != nullptr) db->Insert(conn->index(), obj);
         } else {
           if (!CheckAndReply(obj, conn, Type_String)) return;
@@ -266,7 +271,6 @@ void AppendCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           bool update_meta = !CHECK_STRING_META(
               obj, Type_String, Encode_Raw, STRING_BULK(OBJ_STRING(obj)->len),
               STRING_BULK(str_value->len));
-
           OBJ_SET_VALUE(obj, str_value, Type_String, Encode_Raw);
           cmd->Update(conn->index(), obj, update_meta);
         }
@@ -281,19 +285,33 @@ void GetSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
       cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
                                EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
+        uint32_t version = 0;
         auto &args = cmd_args->args();
         auto obj = db->Get(conn->index(), args[1]);
-        if (obj != nullptr && !CheckAndReply(obj, conn, Type_String)) {
-          return;
+        if (obj != nullptr) {
+          if (!CheckAndReply(obj, conn, Type_String)) {
+            return;
+          }
+        } else {
+          bool type_err = false;
+          obj = cmd->GetValue(conn->index(), args[1], conn, type_err, version);
+          if (type_err) {
+            conn->ReplyTypeError();
+            return;
+          }
+          if (obj != nullptr) db->Insert(conn->index(), obj);
         }
-        ReplyMemObj(obj, conn);
+        conn->ReplyObj(obj);
 
         if (obj == nullptr) {
-          db->Set(conn->index(), args[1], args[2], Type_String, Encode_Raw);
+          cmd->AddObj(db, conn->index(), args[1], args[2], Type_String,
+                      Encode_Raw, version);
         } else {
-          obj->value = args[2];
-          obj->type = Type_String;
-          obj->encode = Encode_Raw;
+          bool update_meta = !CHECK_STRING_META(
+              obj, Type_String, Encode_Raw, STRING_BULK(OBJ_STRING(obj)->len),
+              STRING_BULK(args[2]->len));
+          OBJ_SET_VALUE(obj, args[2], Type_String, Encode_Raw);
+          cmd->Update(conn->index(), obj, update_meta);
         }
       });
 }
@@ -306,13 +324,24 @@ void MGetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
   for (int i = 0; i < cnt; i++) {
     MemSaver::Default()->DoCmd(
         cmd_args->args()[i + 1],
-        [cmd_args, conn, rets, i, cmd = shared_from_this()](
+        [rets, i, cmd_args, conn, cmd = shared_from_this()](
             EventLoop *lt, std::shared_ptr<void> arg) {
           auto &args = cmd_args->args();
           auto db = std::static_pointer_cast<MemDB>(arg);
           auto obj = db->Get(conn->index(), args[i + 1]);
           if (obj != nullptr) {
-            rets->str_values[i] = GenString(OBJ_STRING(obj), obj->encode);
+            if (obj->type == Type_String) {
+              rets->str_values[i] = GenString(OBJ_STRING(obj), obj->encode);
+            }
+          } else {
+            bool type_err = false;
+            uint32_t version = 0;
+            obj = cmd->GetValue(conn->index(), args[i + 1], conn, type_err,
+                                version);
+            if (obj != nullptr) {
+              rets->str_values[i] = GenString(OBJ_STRING(obj), obj->encode);
+              db->Insert(conn->index(), obj);
+            }
           }
 
           rets->cnt--;
@@ -337,36 +366,69 @@ void MSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
   auto rets = std::make_shared<MultiResult>(cnt);
 
   for (int i = 0; i < cnt; i++) {
-    MemSaver::Default()->DoCmd(cmd_args->args()[i * 2 + 1],
-                               [cmd_args, conn, cmd = shared_from_this(), rets,
-                                i](EventLoop *lt, std::shared_ptr<void> arg) {
-                                 auto &args = cmd_args->args();
-                                 auto db = std::static_pointer_cast<MemDB>(arg);
-                                 db->Set(conn->index(), args[i * 2 + 1],
-                                         args[i * 2 + 2], Type_String,
-                                         Encode_Raw);
+    MemSaver::Default()->DoCmd(
+        cmd_args->args()[i * 2 + 1],
+        [rets, i, cmd_args, conn, cmd = shared_from_this()](
+            EventLoop *lt, std::shared_ptr<void> arg) {
+          auto db = std::static_pointer_cast<MemDB>(arg);
+          uint16_t old_bulk = 0;
+          auto &args = cmd_args->args();
+          auto obj = db->Get(conn->index(), args[i * 2 + 1]);
+          if (obj != nullptr) {
+            if (obj->type == Type_String && obj->encode == Encode_Raw) {
+              auto str_value = std::static_pointer_cast<membuf_t>(obj->value);
+              old_bulk = STRING_BULK(str_value->len);
+            }
+          } else {
+            obj = cmd->GetMeta(conn->index(), args[i * 2 + 1], old_bulk);
+            if (obj == nullptr) {
+              obj = rockin::make_shared<MemObj>();
+              obj->key = args[i * 2 + 1];
+            }
+            db->Insert(conn->index(), obj);
+          }
 
-                                 rets->cnt--;
-                                 if (rets->cnt.load() == 0) {
-                                   conn->ReplyOk();
-                                 }
-                               });
+          bool update_meta =
+              !CHECK_STRING_META(obj, Type_String, Encode_Raw, old_bulk,
+                                 STRING_BULK(args[i * 2 + 2]->len));
+          OBJ_SET_VALUE(obj, args[i * 2 + 2], Type_String, Encode_Raw);
+          cmd->Update(conn->index(), obj, update_meta);
+
+          rets->cnt--;
+          if (rets->cnt.load() == 0) {
+            conn->ReplyOk();
+          }
+        });
   }
 }
 
-static void IncrDecrProcess(std::shared_ptr<CmdArgs> cmd_args,
+static void IncrDecrProcess(std::shared_ptr<StringCmd> cmd,
+                            std::shared_ptr<CmdArgs> cmd_args,
                             std::shared_ptr<RockinConn> conn,
                             std::shared_ptr<MemDB> db, int num) {
+  uint32_t version = 0;
   auto &args = cmd_args->args();
   auto obj = db->Get(conn->index(), args[1]);
-  if (obj != nullptr && !CheckAndReply(obj, conn, Type_String)) {
-    return;
+  if (obj != nullptr) {
+    if (!CheckAndReply(obj, conn, Type_String)) {
+      return;
+    }
+  } else {
+    bool type_err = false;
+    obj = cmd->GetValue(conn->index(), args[1], conn, type_err, version);
+    if (type_err) {
+      conn->ReplyTypeError();
+      return;
+    }
+    if (obj != nullptr) db->Insert(conn->index(), obj);
   }
 
   if (obj == nullptr) {
     auto value = rockin::make_shared<membuf_t>(sizeof(int64_t));
     BUF_INT64(value) = num;
-    obj = db->Set(conn->index(), args[1], value, Type_String, Encode_Int);
+    // obj = db->Set(conn->index(), args[1], value, Type_String, Encode_Int);
+    cmd->AddObj(db, conn->index(), args[1], value, Type_String, Encode_Int,
+                version);
   } else {
     int64_t oldv;
     if (!GenInt64(OBJ_STRING(obj), obj->encode, oldv)) {
@@ -374,6 +436,7 @@ static void IncrDecrProcess(std::shared_ptr<CmdArgs> cmd_args,
       return;
     }
 
+    bool update_meta = !CHECK_STRING_META(obj, Type_String, Encode_Int, 1, 1);
     if (obj->encode == Encode_Int) {
       BUF_INT64(OBJ_STRING(obj)) = oldv + num;
     } else {
@@ -381,18 +444,19 @@ static void IncrDecrProcess(std::shared_ptr<CmdArgs> cmd_args,
       BUF_INT64(value) = oldv + num;
       OBJ_SET_VALUE(obj, value, Type_String, Encode_Int);
     }
+    cmd->Update(conn->index(), obj, update_meta);
   }
-  ReplyMemObj(obj, conn);
+  conn->ReplyObj(obj);
 }
 
 void IncrCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                  std::shared_ptr<RockinConn> conn) {
-  MemSaver::Default()->DoCmd(
-      cmd_args->args()[1],
-      [cmd_args, conn](EventLoop *lt, std::shared_ptr<void> arg) {
-        auto db = std::static_pointer_cast<MemDB>(arg);
-        IncrDecrProcess(cmd_args, conn, db, 1);
-      });
+  MemSaver::Default()->DoCmd(cmd_args->args()[1],
+                             [cmd_args, conn, cmd = shared_from_this()](
+                                 EventLoop *lt, std::shared_ptr<void> arg) {
+                               auto db = std::static_pointer_cast<MemDB>(arg);
+                               IncrDecrProcess(cmd, cmd_args, conn, db, 1);
+                             });
 }
 void IncrbyCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
@@ -408,7 +472,7 @@ void IncrbyCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           return;
         }
 
-        IncrDecrProcess(cmd_args, conn, db, tmpv);
+        IncrDecrProcess(cmd, cmd_args, conn, db, tmpv);
       });
 }
 
@@ -418,7 +482,7 @@ void DecrCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                              [cmd_args, conn, cmd = shared_from_this()](
                                  EventLoop *lt, std::shared_ptr<void> arg) {
                                auto db = std::static_pointer_cast<MemDB>(arg);
-                               IncrDecrProcess(cmd_args, conn, db, -1);
+                               IncrDecrProcess(cmd, cmd_args, conn, db, -1);
                              });
 }
 
@@ -436,7 +500,7 @@ void DecrbyCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           return;
         }
 
-        IncrDecrProcess(cmd_args, conn, db, -tmpv);
+        IncrDecrProcess(cmd, cmd_args, conn, db, -tmpv);
       });
 }
 
@@ -475,17 +539,30 @@ void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           return;
         }
 
+        uint32_t version = 0;
         auto obj = db->Get(conn->index(), args[1]);
-        if (obj != nullptr && !CheckAndReply(obj, conn, Type_String)) {
-          return;
+        if (obj != nullptr) {
+          if (!CheckAndReply(obj, conn, Type_String)) return;
+        } else {
+          bool type_err = false;
+          obj = cmd->GetValue(conn->index(), args[1], conn, type_err, version);
+          if (type_err) {
+            conn->ReplyTypeError();
+            return;
+          }
+          if (obj != nullptr) db->Insert(conn->index(), obj);
         }
 
         int byte = offset >> 3;
+        bool update_meta = !CHECK_STRING_META(obj, Type_String, Encode_Raw,
+                                              STRING_BULK(OBJ_STRING(obj)->len),
+                                              STRING_BULK(byte + 1));
         MemPtr str_value;
         if (obj == nullptr) {
           str_value = rockin::make_shared<membuf_t>(byte + 1);
           obj = db->Set(conn->index(), args[1], str_value, Type_String,
                         Encode_Raw);
+          obj->version = version;
         } else {
           str_value = GenString(OBJ_STRING(obj), obj->encode);
           OBJ_SET_VALUE(obj, str_value, Type_String, Encode_Raw);
@@ -505,6 +582,7 @@ void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         byteval &= ~(1 << bit);
         byteval |= ((on & 0x1) << bit);
         str_value->data[byte] = byteval;
+        cmd->Update(conn->index(), obj, update_meta);
       });
 }
 

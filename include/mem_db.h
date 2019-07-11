@@ -91,7 +91,4 @@ extern bool GenInt64(MemPtr str, int encode, int64_t &v);
 extern bool CheckAndReply(std::shared_ptr<MemObj> obj,
                           std::shared_ptr<RockinConn> conn, int type);
 
-extern void ReplyMemObj(std::shared_ptr<MemObj> obj,
-                        std::shared_ptr<RockinConn> conn);
-
 }  // namespace rockin
