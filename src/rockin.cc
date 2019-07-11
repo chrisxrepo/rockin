@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
 
   // init rocksdb
-  rockin::DiskSaver::Default()->InitAndCreate(2, "/tmp/rocksdb");
+  rockin::DiskSaver::Default()->InitAndCreate(1, "/tmp/rocksdb");
 
   // init handle
   rockin::CmdTable::Default()->Init();

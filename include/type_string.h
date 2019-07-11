@@ -19,11 +19,17 @@ class StringCmd : public Cmd {
   std::shared_ptr<MemObj> GetMeta(int dbindex, MemPtr key, uint16_t &bulk);
 
   // get value from disk saver
-  std::shared_ptr<MemObj> GetValue(int dbindex, MemPtr key, bool &type_err,
-                                   std::shared_ptr<RockinConn> conn);
+  std::shared_ptr<MemObj> GetValue(int dbindex, MemPtr key,
+                                   std::shared_ptr<RockinConn> conn,
+                                   bool &type_err, uint32_t &version);
 
   // udpate string
   bool Update(int dbindex, std::shared_ptr<MemObj> obj, bool update_meta);
+
+  // add obj
+  std::shared_ptr<MemObj> AddObj(std::shared_ptr<MemDB> db, int dbindex,
+                                 MemPtr key, MemPtr value, int type, int encode,
+                                 uint32_t version);
 };
 
 // GET key

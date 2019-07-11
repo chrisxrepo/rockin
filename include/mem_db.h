@@ -16,6 +16,7 @@
 
 namespace rockin {
 enum ValueType {
+  Type_None = 0,
   Type_String = 1,
   Type_List = 2,
   Type_Hash = 4,
@@ -24,6 +25,7 @@ enum ValueType {
 };
 
 enum EncodeType {
+  Encode_None = 0,
   Encode_Raw = 1,
   Encode_Int = 2,
 };
