@@ -137,7 +137,7 @@ bool DiskDB::WriteBatch(const std::vector<DiskWrite> &writes) {
     }
   }
 
-  auto status = db_->Write(rocksdb::WriteOptions(), &batch);
+  auto status = db_->Write(write_options_, &batch);
   if (!status.ok()) {
     LOG(ERROR) << "rocksdb Write:" << status.ToString();
   }
@@ -152,7 +152,7 @@ bool DiskDB::GetMeta(int db, MemPtr key, std::string *value) {
     return false;
   }
 
-  auto status = db_->Get(rocksdb::ReadOptions(), mt_handles_[db],
+  auto status = db_->Get(read_options_, mt_handles_[db],
                          rocksdb::Slice(key->data, key->len), value);
 
   if (status.IsNotFound()) {
@@ -175,7 +175,7 @@ bool DiskDB::GetData(int db, MemPtr key, std::string *value) {
     return false;
   }
 
-  auto status = db_->Get(rocksdb::ReadOptions(), db_handles_[db],
+  auto status = db_->Get(read_options_, db_handles_[db],
                          rocksdb::Slice(key->data, key->len), value);
 
   if (status.IsNotFound()) {
@@ -206,7 +206,7 @@ std::vector<bool> DiskDB::GetDatas(int db, std::vector<MemPtr> &keys,
     slices.push_back(rocksdb::Slice(keys[i]->data, keys[i]->len));
   }
 
-  auto statuss = db_->MultiGet(rocksdb::ReadOptions(), cfs, slices, values);
+  auto statuss = db_->MultiGet(read_options_, cfs, slices, values);
 
   std::vector<bool> results;
   for (size_t i = 0; i < statuss.size(); i++) {
@@ -224,6 +224,69 @@ std::vector<bool> DiskDB::GetDatas(int db, std::vector<MemPtr> &keys,
   }
 
   return results;
+}
+
+bool DiskDB::SetMeta(int db, MemPtr key, MemPtr value) {
+  return SetMetasDatas(db, KVPairS{std::make_pair(key, value)}, KVPairS());
+}
+
+bool DiskDB::SetMetas(int db, const KVPairS &metas) {
+  return SetMetasDatas(db, metas, KVPairS());
+}
+
+bool DiskDB::SetData(int db, MemPtr key, MemPtr value) {
+  return SetMetasDatas(db, KVPairS(), KVPairS{std::make_pair(key, value)});
+}
+
+bool DiskDB::SetDatas(int db, const KVPairS &kvs) {
+  return SetMetasDatas(db, KVPairS(), kvs);
+}
+
+bool DiskDB::SetMetaData(int db, MemPtr mkey, MemPtr mvlaue, MemPtr dkey,
+                         MemPtr dvalue) {
+  return SetMetasDatas(db, KVPairS{std::make_pair(mkey, mvlaue)},
+                       KVPairS{std::make_pair(dkey, dvalue)});
+}
+
+bool DiskDB::SetMetaDatas(int db, MemPtr mkey, MemPtr mvlaue,
+                          const KVPairS &kvs) {
+  return SetMetasDatas(db, KVPairS{std::make_pair(mkey, mvlaue)}, kvs);
+}
+
+bool DiskDB::SetMetasDatas(int db, const KVPairS &metas, const KVPairS &kvs) {
+  if (db < 0 || db >= DBNum) {
+    LOG(ERROR) << "SetMetaDatas dbnum invalid:" << db;
+    return false;
+  }
+
+  rocksdb::WriteBatch batch;
+  for (auto iter = metas.begin(); iter != metas.end(); ++iter) {
+    auto status = batch.Put(
+        mt_handles_[db], rocksdb::Slice(iter->first->data, iter->first->len),
+        rocksdb::Slice(iter->second->data, iter->second->len));
+    if (!status.ok()) {
+      LOG(ERROR) << "SetMetaDatas WriteBatch.Put:" << status.ToString();
+      return false;
+    }
+  }
+
+  for (auto iter = kvs.begin(); iter != kvs.end(); ++iter) {
+    auto status = batch.Put(
+        db_handles_[db], rocksdb::Slice(iter->first->data, iter->first->len),
+        rocksdb::Slice(iter->second->data, iter->second->len));
+    if (!status.ok()) {
+      LOG(ERROR) << "SetMetaDatas WriteBatch.Put:" << status.ToString();
+      return false;
+    }
+  }
+
+  auto status = db_->Write(write_options_, &batch);
+  if (!status.ok()) {
+    LOG(ERROR) << "SetMetaDatas Write:" << status.ToString();
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace rockin

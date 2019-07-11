@@ -30,16 +30,45 @@ class DiskDB {
 
   bool WriteBatch(const std::vector<DiskWrite> &writes);
 
+  // get meta
   bool GetMeta(int db, MemPtr key, std::string *value);
+
+  // get data
   bool GetData(int db, MemPtr key, std::string *value);
+
+  // get multidata
   std::vector<bool> GetDatas(int db, std::vector<MemPtr> &keys,
                              std::vector<std::string> *value);
+
+  // set meta
+  bool SetMeta(int db, MemPtr key, MemPtr vlaue);
+
+  // set multimeta
+  bool SetMetas(int db, const KVPairS &metas);
+
+  // set data
+  bool SetData(int db, MemPtr key, MemPtr vlaue);
+
+  // set multidata
+  bool SetDatas(int db, const KVPairS &kvs);
+
+  // set meta and data
+  bool SetMetaData(int db, MemPtr mkey, MemPtr mvlaue, MemPtr dkey,
+                   MemPtr dvlaue);
+
+  // set meta and multidata
+  bool SetMetaDatas(int db, MemPtr mkey, MemPtr mvlaue, const KVPairS &kvs);
+
+  // set multimeta and multidata
+  bool SetMetasDatas(int db, const KVPairS &metas, const KVPairS &kvs);
 
  private:
   int partition_id_;
   std::string partition_name_;
   std::string path_;
   rocksdb::DB *db_;
+  rocksdb::ReadOptions read_options_;
+  rocksdb::WriteOptions write_options_;
   std::vector<rocksdb::ColumnFamilyHandle *> mt_handles_;
   std::vector<rocksdb::ColumnFamilyHandle *> db_handles_;
 

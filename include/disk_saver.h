@@ -4,12 +4,9 @@
 #include <vector>
 #include "disk_db.h"
 #include "rockin_alloc.h"
-#include "safe_queue.h"
 #include "utils.h"
 
 namespace rockin {
-class _WriteData;
-
 class DiskSaver {
  public:
   static DiskSaver *Default();
@@ -27,24 +24,10 @@ class DiskSaver {
   // get diskdb
   std::shared_ptr<DiskDB> GetDB(MemPtr key);
 
-  bool WriteMeta(int dbindex, MemPtr key, KVPairS mates,
-                 std::shared_ptr<void> retain);
-  bool WriteData(int dbindex, MemPtr key, KVPairS datas,
-                 std::shared_ptr<void> retain);
-  bool WriteAll(int dbindex, MemPtr key, KVPairS mates, KVPairS datas,
-                std::shared_ptr<void> retain);
-
- private:
-  void RunLoop();
-  void WriteDiskData();
-
  private:
   std::string path_;
+  size_t partition_num_;
   std::vector<std::shared_ptr<DiskDB>> partitions_;
-  uv_loop_t write_loop_;
-  uv_thread_t write_thread_;
-  uv_async_t write_async_;
-  SafeQueue<_WriteData> write_queue_;
 };
 
 }  // namespace rockin

@@ -10,7 +10,7 @@
 
 namespace rockin {
 
-#define STRING_MAX_BULK_SIZE 128
+#define STRING_MAX_BULK_SIZE 1024
 
 #define STRING_META_VALUE_SIZE 2
 #define STRING_KEY_BULK_SIZE 2
@@ -53,6 +53,7 @@ bool StringCmd::Update(int dbindex, std::shared_ptr<MemObj> obj,
     kvs.push_back(std::make_pair(key, value));
   }
 
+  auto diskdb = DiskSaver::Default()->GetDB(obj->key);
   if (update_meta) {
     MemPtr meta = rockin::make_shared<membuf_t>(BASE_META_VALUE_SIZE +
                                                 STRING_META_VALUE_SIZE);
@@ -62,11 +63,9 @@ bool StringCmd::Update(int dbindex, std::shared_ptr<MemObj> obj,
     EncodeFixed16(meta->data + BASE_META_VALUE_SIZE,
                   STRING_BULK(str_value->len));
 
-    DiskSaver::Default()->WriteAll(dbindex, obj->key,
-                                   KVPairS{std::make_pair(obj->key, meta)}, kvs,
-                                   str_value);
+    diskdb->SetMetaDatas(dbindex, obj->key, meta, kvs);
   } else {
-    DiskSaver::Default()->WriteData(dbindex, obj->key, kvs, str_value);
+    diskdb->SetDatas(dbindex, kvs);
   }
 
   return true;
