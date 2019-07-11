@@ -18,10 +18,10 @@ class StringCmd : public Cmd {
   // get meta from disk saver
   std::shared_ptr<MemObj> GetMeta(int dbindex, MemPtr key, uint16_t &bulk);
 
-  // get value from disk saver
-  std::shared_ptr<MemObj> GetValue(int dbindex, MemPtr key,
-                                   std::shared_ptr<RockinConn> conn,
-                                   bool &type_err, uint32_t &version);
+  // get obj from memsaver
+  // if not exist then get obj from disksaver
+  std::shared_ptr<MemObj> GetObj(int dbindex, std::shared_ptr<MemDB> db,
+                                 MemPtr key, bool &type_err, uint32_t &version);
 
   // udpate string
   bool Update(int dbindex, std::shared_ptr<MemObj> obj, bool update_meta);
