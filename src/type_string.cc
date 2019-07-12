@@ -182,8 +182,25 @@ std::shared_ptr<MemObj> StringCmd::AddObj(std::shared_ptr<MemDB> db,
   return obj;
 }
 
-///////////////////////////////////////////////////////////////////////////////
+std::shared_ptr<MemObj> StringCmd::UpdateObj(int dbindex,
+                                             std::shared_ptr<MemObj> obj,
+                                             MemPtr value, int type, int encode,
+                                             int old_bulk) {
+  bool update_meta = false;
+  if (old_bulk == 0 && obj->value != nullptr) {
+    update_meta = !CHECK_STRING_META(obj, type, encode,
+                                     (STRING_BULK(OBJ_STRING(obj)->len)),
+                                     STRING_BULK(value->len));
+  } else {
+    update_meta = !CHECK_STRING_META(obj, type, encode, old_bulk,
+                                     STRING_BULK(value->len));
+  }
+  OBJ_SET_VALUE(obj, value, type, encode);
+  Update(dbindex, obj, update_meta);
+  return obj;
+}
 
+///////////////////////////////////////////////////////////////////////////////
 void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
@@ -229,11 +246,8 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           db->Insert(conn->index(), obj);
         }
 
-        bool update_meta = !CHECK_STRING_META(
-            obj, Type_String, Encode_Raw, old_bulk, STRING_BULK(args[2]->len));
-
-        OBJ_SET_VALUE(obj, args[2], Type_String, Encode_Raw);
-        cmd->Update(conn->index(), obj, update_meta);
+        cmd->UpdateObj(conn->index(), obj, args[2], Type_String, Encode_Raw,
+                       old_bulk);
         conn->ReplyOk();
       });
 }
@@ -265,11 +279,8 @@ void AppendCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
               tmp_value->len + args[2]->len, tmp_value);
           memcpy(str_value->data + tmp_value->len, args[2]->data, args[2]->len);
 
-          bool update_meta = !CHECK_STRING_META(
-              obj, Type_String, Encode_Raw, STRING_BULK(OBJ_STRING(obj)->len),
-              STRING_BULK(str_value->len));
-          OBJ_SET_VALUE(obj, str_value, Type_String, Encode_Raw);
-          cmd->Update(conn->index(), obj, update_meta);
+          cmd->UpdateObj(conn->index(), obj, str_value, Type_String, Encode_Raw,
+                         0);
         }
 
         conn->ReplyInteger(str_value->len);
@@ -297,11 +308,8 @@ void GetSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           cmd->AddObj(db, conn->index(), args[1], args[2], Type_String,
                       Encode_Raw, version);
         } else {
-          bool update_meta = !CHECK_STRING_META(
-              obj, Type_String, Encode_Raw, STRING_BULK(OBJ_STRING(obj)->len),
-              STRING_BULK(args[2]->len));
-          OBJ_SET_VALUE(obj, args[2], Type_String, Encode_Raw);
-          cmd->Update(conn->index(), obj, update_meta);
+          cmd->UpdateObj(conn->index(), obj, args[2], Type_String, Encode_Raw,
+                         0);
         }
       });
 }
@@ -370,13 +378,8 @@ void MSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
             }
             db->Insert(conn->index(), obj);
           }
-
-          bool update_meta =
-              !CHECK_STRING_META(obj, Type_String, Encode_Raw, old_bulk,
-                                 STRING_BULK(args[i * 2 + 2]->len));
-          OBJ_SET_VALUE(obj, args[i * 2 + 2], Type_String, Encode_Raw);
-          cmd->Update(conn->index(), obj, update_meta);
-
+          cmd->UpdateObj(conn->index(), obj, args[i * 2 + 2], Type_String,
+                         Encode_Raw, old_bulk);
           rets->cnt--;
           if (rets->cnt.load() == 0) {
             conn->ReplyOk();
@@ -410,15 +413,15 @@ static void IncrDecrProcess(std::shared_ptr<StringCmd> cmd,
       return;
     }
 
-    bool update_meta = !CHECK_STRING_META(obj, Type_String, Encode_Int, 1, 1);
+    MemPtr new_value = nullptr;
     if (obj->encode == Encode_Int) {
-      BUF_INT64(OBJ_STRING(obj)) = oldv + num;
+      new_value = OBJ_STRING(obj);
+      BUF_INT64(new_value) = oldv + num;
     } else {
-      auto value = rockin::make_shared<membuf_t>(sizeof(int64_t));
-      BUF_INT64(value) = oldv + num;
-      OBJ_SET_VALUE(obj, value, Type_String, Encode_Int);
+      new_value = rockin::make_shared<membuf_t>(sizeof(int64_t));
+      BUF_INT64(new_value) = oldv + num;
     }
-    cmd->Update(conn->index(), obj, update_meta);
+    cmd->UpdateObj(conn->index(), obj, new_value, Type_String, Encode_Int, 0);
   }
   conn->ReplyObj(obj);
 }
@@ -496,6 +499,28 @@ static bool GetBitOffset(MemPtr v, std::shared_ptr<RockinConn> conn,
   return true;
 }
 
+MemPtr SetBitCmd::DoSetBit(MemPtr value, int64_t offset, int on, int &ret) {
+  int byte = offset >> 3;
+  if (value == nullptr) {
+    value = rockin::make_shared<membuf_t>(byte + 1, value);
+    memset(value->data, 0, value->len);
+  } else if (byte + 1 > value->len) {
+    int oldlen = value->len;
+    value = rockin::make_shared<membuf_t>(byte + 1, value);
+    memset(value->data + oldlen, 0, value->len - oldlen);
+  }
+
+  int bit = 7 - (offset & 0x7);
+  char byteval = value->data[byte];
+  ret = ((byteval & (1 << bit)) ? 1 : 0);
+
+  byteval &= ~(1 << bit);
+  byteval |= ((on & 0x1) << bit);
+  value->data[byte] = byteval;
+
+  return value;
+}
+
 void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
@@ -521,36 +546,19 @@ void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           return;
         }
 
-        int byte = offset >> 3;
-        bool update_meta = !CHECK_STRING_META(obj, Type_String, Encode_Raw,
-                                              STRING_BULK(OBJ_STRING(obj)->len),
-                                              STRING_BULK(byte + 1));
-        MemPtr str_value;
+        int old_bit = 0;
         if (obj == nullptr) {
-          str_value = rockin::make_shared<membuf_t>(byte + 1);
-          obj = db->Set(conn->index(), args[1], str_value, Type_String,
-                        Encode_Raw);
-          obj->version = version;
+          cmd->AddObj(db, conn->index(), args[1],
+                      cmd->DoSetBit(nullptr, offset, on, old_bit), Type_String,
+                      Encode_Raw, version);
         } else {
-          str_value = GenString(OBJ_STRING(obj), obj->encode);
-          OBJ_SET_VALUE(obj, str_value, Type_String, Encode_Raw);
+          int old_bulk = STRING_BULK(OBJ_STRING(obj)->len);
+          auto value = GenString(OBJ_STRING(obj), obj->encode);
+          cmd->UpdateObj(conn->index(), obj,
+                         cmd->DoSetBit(value, offset, on, old_bit), Type_String,
+                         Encode_Raw, old_bulk);
         }
-
-        if (byte + 1 > str_value->len) {
-          int oldlen = str_value->len;
-          str_value = rockin::make_shared<membuf_t>(byte + 1, str_value);
-          memset(str_value->data + oldlen, 0, str_value->len - oldlen);
-          OBJ_SET_VALUE(obj, str_value, Type_String, Encode_Raw);
-        }
-
-        int bit = 7 - (offset & 0x7);
-        char byteval = str_value->data[byte];
-        conn->ReplyInteger((byteval & (1 << bit)) ? 1 : 0);
-
-        byteval &= ~(1 << bit);
-        byteval |= ((on & 0x1) << bit);
-        str_value->data[byte] = byteval;
-        cmd->Update(conn->index(), obj, update_meta);
+        conn->ReplyInteger(old_bit);
       });
 }
 
@@ -566,12 +574,14 @@ void GetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           return;
         }
 
-        auto obj = db->Get(conn->index(), args[1]);
+        uint32_t version = 0;
+        bool type_err = false;
+        auto obj = cmd->GetObj(conn->index(), db, args[1], type_err, version);
         if (obj == nullptr) {
-          conn->ReplyInteger(0);
-          return;
-        }
-        if (!CheckAndReply(obj, conn, Type_String)) {
+          if (type_err)
+            conn->ReplyTypeError();
+          else
+            conn->ReplyInteger(0);
           return;
         }
 
@@ -595,12 +605,14 @@ void BitCountCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                                EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
         auto &args = cmd_args->args();
-        auto obj = db->Get(conn->index(), args[1]);
+        uint32_t version = 0;
+        bool type_err = false;
+        auto obj = cmd->GetObj(conn->index(), db, args[1], type_err, version);
         if (obj == nullptr) {
-          conn->ReplyInteger(0);
-          return;
-        }
-        if (!CheckAndReply(obj, conn, Type_String)) {
+          if (type_err)
+            conn->ReplyTypeError();
+          else
+            conn->ReplyInteger(0);
           return;
         }
 
@@ -640,7 +652,7 @@ void BitCountCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                   std::shared_ptr<RockinConn> conn) {
   MemSaver::Default()->DoCmd(
-      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+      cmd_args->args()[2], [cmd_args, conn, cmd = shared_from_this()](
                                EventLoop *lt, std::shared_ptr<void> arg) {
 #define BITOP_AND 0
 #define BITOP_OR 1
@@ -649,24 +661,24 @@ void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         auto db = std::static_pointer_cast<MemDB>(arg);
         auto &args = cmd_args->args();
         int op = 0;
-        if (args[2]->len == 3 &&
-            (args[2]->data[0] == 'a' || args[2]->data[0] == 'A') &&
-            (args[2]->data[1] == 'n' || args[2]->data[1] == 'N') &&
-            (args[2]->data[2] == 'd' || args[2]->data[2] == 'D')) {
+        if (args[1]->len == 3 &&
+            (args[1]->data[0] == 'a' || args[1]->data[0] == 'A') &&
+            (args[1]->data[1] == 'n' || args[1]->data[1] == 'N') &&
+            (args[1]->data[2] == 'd' || args[1]->data[2] == 'D')) {
           op = BITOP_AND;
-        } else if (args[2]->len == 2 &&
-                   (args[2]->data[0] == 'o' || args[2]->data[0] == 'O') &&
-                   (args[2]->data[1] == 'r' || args[2]->data[1] == 'R')) {
+        } else if (args[1]->len == 2 &&
+                   (args[1]->data[0] == 'o' || args[1]->data[0] == 'O') &&
+                   (args[1]->data[1] == 'r' || args[1]->data[1] == 'R')) {
           op = BITOP_OR;
-        } else if (args[2]->len == 3 &&
-                   (args[2]->data[0] == 'x' || args[2]->data[0] == 'X') &&
-                   (args[2]->data[1] == 'o' || args[2]->data[1] == 'O') &&
-                   (args[2]->data[2] == 'r' || args[2]->data[2] == 'R')) {
+        } else if (args[1]->len == 3 &&
+                   (args[1]->data[0] == 'x' || args[1]->data[0] == 'X') &&
+                   (args[1]->data[1] == 'o' || args[1]->data[1] == 'O') &&
+                   (args[1]->data[2] == 'r' || args[1]->data[2] == 'R')) {
           op = BITOP_XOR;
-        } else if (args[2]->len == 3 &&
-                   (args[2]->data[0] == 'n' || args[2]->data[0] == 'N') &&
-                   (args[2]->data[1] == 'o' || args[2]->data[1] == 'O') &&
-                   (args[2]->data[2] == 't' || args[2]->data[3] == 'T')) {
+        } else if (args[1]->len == 3 &&
+                   (args[1]->data[0] == 'n' || args[1]->data[0] == 'N') &&
+                   (args[1]->data[1] == 'o' || args[1]->data[1] == 'O') &&
+                   (args[1]->data[2] == 't' || args[1]->data[3] == 'T')) {
           op = BITOP_NOT;
         } else {
           conn->ReplySyntaxError();
@@ -681,13 +693,17 @@ void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         size_t maxlen = 0;
         std::vector<MemPtr> values;
         for (int i = 3; i < args.size(); i++) {
-          auto obj = db->Get(conn->index(), args[i]);
+          uint32_t version = 0;
+          bool type_err = false;
+          auto obj = cmd->GetObj(conn->index(), db, args[i], type_err, version);
+          if (type_err) {
+            conn->ReplyTypeError();
+            return;
+          }
+
           if (obj == nullptr) {
             values.push_back(nullptr);
           } else {
-            if (!CheckAndReply(obj, conn, Type_String)) {
-              return;
-            }
             auto str_value = GenString(OBJ_STRING(obj), obj->encode);
             if (str_value->len > maxlen) maxlen = str_value->len;
             values.push_back(str_value);
@@ -720,7 +736,24 @@ void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
             res->data[j] = output;
           }
 
-          db->Set(conn->index(), args[1], res, Type_String, Encode_Raw);
+          uint16_t old_bulk;
+          auto obj = db->Get(conn->index(), args[2]);
+          if (obj != nullptr) {
+            if (obj->type == Type_String && obj->encode == Encode_Raw) {
+              auto str_value = std::static_pointer_cast<membuf_t>(obj->value);
+              old_bulk = STRING_BULK(str_value->len);
+            }
+          } else {
+            obj = cmd->GetMeta(conn->index(), args[2], old_bulk);
+            if (obj == nullptr) {
+              obj = rockin::make_shared<MemObj>();
+              obj->key = args[2];
+            }
+            db->Insert(conn->index(), obj);
+          }
+
+          cmd->UpdateObj(conn->index(), obj, res, Type_String, Encode_Raw,
+                         old_bulk);
         }
 
         conn->ReplyInteger(maxlen);
@@ -740,12 +773,14 @@ void BitPosCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           return;
         }
 
-        auto obj = db->Get(conn->index(), args[1]);
+        uint32_t version = 0;
+        bool type_err = false;
+        auto obj = cmd->GetObj(conn->index(), db, args[1], type_err, version);
         if (obj == nullptr) {
-          conn->ReplyInteger(bit ? -1 : 0);
-          return;
-        }
-        if (!CheckAndReply(obj, conn, Type_String)) {
+          if (type_err)
+            conn->ReplyTypeError();
+          else
+            conn->ReplyInteger(bit ? -1 : 0);
           return;
         }
 

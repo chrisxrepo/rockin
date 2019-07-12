@@ -30,6 +30,10 @@ class StringCmd : public Cmd {
   std::shared_ptr<MemObj> AddObj(std::shared_ptr<MemDB> db, int dbindex,
                                  MemPtr key, MemPtr value, int type, int encode,
                                  uint32_t version);
+
+  std::shared_ptr<MemObj> UpdateObj(int dbindex, std::shared_ptr<MemObj> obj,
+                                    MemPtr value, int type, int encode,
+                                    int old_bulk);
 };
 
 // GET key
@@ -134,6 +138,9 @@ class SetBitCmd : public StringCmd,
 
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
+
+ private:
+  MemPtr DoSetBit(MemPtr value, int64_t offset, int on, int &ret);
 };
 
 // GETBIT key offset

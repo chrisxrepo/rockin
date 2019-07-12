@@ -104,7 +104,7 @@ void CmdTable::Init() {
   // BITOP OR destkey srckey1 srckey2 srckey3... srckeyN
   // BITOP XOR destkey srckey1 srckey2 srckey3... srckeyN
   // BITOP NOT destkey srckey
-  auto bitop_ptr = std::make_shared<BitopCmd>(CmdInfo("bitop", 3));
+  auto bitop_ptr = std::make_shared<BitopCmd>(CmdInfo("bitop", -4));
   cmd_table_.insert(std::make_pair("bitop", bitop_ptr));
 
   // BITPOS key bit[start][end]
