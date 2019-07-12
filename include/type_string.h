@@ -23,9 +23,6 @@ class StringCmd : public Cmd {
   std::shared_ptr<MemObj> GetObj(int dbindex, std::shared_ptr<MemDB> db,
                                  MemPtr key, bool &type_err, uint32_t &version);
 
-  // udpate string
-  bool Update(int dbindex, std::shared_ptr<MemObj> obj, bool update_meta);
-
   // add obj
   std::shared_ptr<MemObj> AddObj(std::shared_ptr<MemDB> db, int dbindex,
                                  MemPtr key, MemPtr value, int type, int encode,
@@ -34,6 +31,10 @@ class StringCmd : public Cmd {
   std::shared_ptr<MemObj> UpdateObj(int dbindex, std::shared_ptr<MemObj> obj,
                                     MemPtr value, int type, int encode,
                                     int old_bulk);
+
+ private:
+  // udpate string
+  bool Update(int dbindex, std::shared_ptr<MemObj> obj, bool update_meta);
 };
 
 // GET key
