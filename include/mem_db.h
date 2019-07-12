@@ -1,4 +1,5 @@
 #pragma once
+#include <uv.h>
 #include <vector>
 #include "redis_dic.h"
 #include "rockin_alloc.h"
@@ -63,15 +64,6 @@ class MemDB {
   // get
   std::shared_ptr<MemObj> Get(int dbindex, MemPtr key);
 
-  // get if nil reply
-  std::shared_ptr<MemObj> GetReplyNil(int dbindex, MemPtr key,
-                                      std::shared_ptr<RockinConn> conn);
-
-  // set
-  std::shared_ptr<MemObj> Set(int dbindex, MemPtr key,
-                              std::shared_ptr<void> value, unsigned char type,
-                              unsigned char encode);
-
   void Insert(int dbindex, std::shared_ptr<MemObj> obj);
 
   // delete by key
@@ -82,6 +74,7 @@ class MemDB {
 
  private:
   std::vector<std::shared_ptr<RedisDic<MemObj>>> dics_;
+  uv_rwlock_t rw_lock_;
 };
 
 extern MemPtr GenString(MemPtr value, int encode);
