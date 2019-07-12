@@ -1,5 +1,6 @@
 #include "mem_saver.h"
 #include <glog/logging.h>
+#include <uv.h>
 #include <mutex>
 #include <random>
 #include <thread>
@@ -26,9 +27,21 @@ MemSaver::MemSaver() {
 
 void MemSaver::Init(size_t thread_num) {
   for (int i = 0; i < thread_num; i++) {
-    EventLoop *et = new EventLoop();
     auto db = std::make_shared<MemDB>();
+    EventLoop *et = new EventLoop();
     dbs_.push_back(std::make_pair(et, db));
+
+    uv_timer_t *t = (uv_timer_t *)malloc(sizeof(uv_timer_t));
+    uv_timer_init(et->loop(), t);
+    t->data = malloc(sizeof(i));
+    *((int *)t->data) = i;
+    uv_timer_start(t,
+                   [](uv_timer_t *t) {
+                     auto db =
+                         MemSaver::Default()->dbs_[*((int *)t->data)].second;
+                     db->ScheduleTimer(g_app_time_ms);
+                   },
+                   1000, 100);
 
     et->Start();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));

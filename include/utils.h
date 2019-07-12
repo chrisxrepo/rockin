@@ -35,11 +35,16 @@
 
 namespace rockin {
 
+extern uint64_t g_app_time_ms;
+
 // get ctype error
 extern std::string GetCerr();
 
 // get libuv error by errcode
 extern std::string GetUvError(int errcode);
+
+// get millisecond time
+extern uint64_t GetMilliSec();
 
 // set socket nonblocking
 extern bool SetNonBlocking(int sock);

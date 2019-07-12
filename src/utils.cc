@@ -4,11 +4,14 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/time.h>
 #include <random>
 #include <sstream>
 #include "dirent.h"
 
 namespace rockin {
+
+uint64_t g_app_time_ms;
 
 std::string GetCerr() {
   const char *errstr = strerror(errno);
@@ -26,30 +29,24 @@ std::string GetUvError(int errcode) {
   return std::move(err);
 }
 
+uint64_t GetMilliSec() {
+  struct timeval tv;
+  ::gettimeofday(&tv, NULL);
+  return uint64_t(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
+}
+
 bool SetNonBlocking(int sock) {
-#ifdef _WIN32
-  {
-    unsigned long nonblocking = 1;
-    if (ioctlsocket(sockt, FIONBIO, &nonblocking) == SOCKET_ERROR) {
-      std::cout << "fcntl(" << sock << ", F_GETFL)" << std::endl;
+  int flags;
+  if ((flags = fcntl(sock, F_GETFL, NULL)) < 0) {
+    std::cout << "fcntl(" << sock << ", F_GETFL)" << std::endl;
+    return false;
+  }
+  if (!(flags & O_NONBLOCK)) {
+    if (fcntl(sock, F_SETFL, flags | O_NONBLOCK) == -1) {
+      std::cout << "fcntl(" << sock << ", F_SETFL)" << std::endl;
       return false;
     }
   }
-#else
-  {
-    int flags;
-    if ((flags = fcntl(sock, F_GETFL, NULL)) < 0) {
-      std::cout << "fcntl(" << sock << ", F_GETFL)" << std::endl;
-      return false;
-    }
-    if (!(flags & O_NONBLOCK)) {
-      if (fcntl(sock, F_SETFL, flags | O_NONBLOCK) == -1) {
-        std::cout << "fcntl(" << sock << ", F_SETFL)" << std::endl;
-        return false;
-      }
-    }
-  }
-#endif
 
   return true;
 }
@@ -81,7 +78,6 @@ bool SetReusePort(int sock) {
 
 // set close-on-exec
 bool SetCloseOnExec(int sock) {
-#if !defined(_WIN32)
   int ret = fcntl(sock, F_GETFD);
   if (ret < 0) {
     return false;
@@ -91,7 +87,6 @@ bool SetCloseOnExec(int sock) {
   if (ret < 0) {
     return false;
   }
-#endif
   return true;
 }
 

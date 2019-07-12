@@ -48,6 +48,14 @@ void MemDB::FlushDB(int dbindex) {
   dics_[dbindex] = std::make_shared<RedisDic<MemObj>>();
 }
 
+void MemDB::ScheduleTimer(uint32_t time) {
+  for (size_t i = 0; i < dics_.size(); i++) {
+    for (int i = 0; i < 1000; i++) {
+      if (!dics_[i]->RehashStep()) break;
+    }
+  }
+}
+
 MemPtr GenString(MemPtr value, int encode) {
   if (value != nullptr && encode == Encode_Int) {
     return rockin::make_shared<membuf_t>(Int64ToString(BUF_INT64(value)));

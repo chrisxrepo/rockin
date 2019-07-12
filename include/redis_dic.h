@@ -39,6 +39,7 @@ class RedisDic {
     if (table_[0]->used + table_[1]->used == 0) {
       return nullptr;
     }
+    RehashStep();
 
     uint64_t h = hash_->Hash((unsigned char*)key->data, key->len);
     for (int i = 0; i < 2; i++) {
@@ -117,8 +118,12 @@ class RedisDic {
     if (table_[1]->used > 0) rehashidx_ = 0;
   }
 
-  void RehashStep() {
-    if (rehashidx_ != -1) Rehash(4);
+  bool RehashStep() {
+    if (rehashidx_ != -1) {
+      Rehash(4);
+      return true;
+    }
+    return false;
   }
 
   void Rehash(int n) {
@@ -127,9 +132,9 @@ class RedisDic {
     }
 
     while (n > 0 && rehashidx_ < table_[1]->size) {
-      Node* node = table_[1]->head[rehashidx_];
+      auto node = table_[1]->head[rehashidx_];
       while (node) {
-        Node* next_ = node->next;
+        auto next_ = node->next;
         Insert(node);
         table_[1]->used--;
         node = next_;

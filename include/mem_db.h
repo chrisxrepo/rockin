@@ -72,6 +72,8 @@ class MemDB {
   // flush db
   void FlushDB(int dbindex);
 
+  void ScheduleTimer(uint32_t time);
+
  private:
   std::vector<std::shared_ptr<RedisDic<MemObj>>> dics_;
   uv_rwlock_t rw_lock_;
