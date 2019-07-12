@@ -23,26 +23,20 @@
   } while (0)
 
 // data key header
-// |  Head(S) |  key len  |   key    |  version  |
-// |  1 byte  |   4 byte  |   n byte |   4 byte  |
-#define BASE_DATA_KEY_SIZE(n) (9 + (n))
-#define DATA_KEY_HEAD(begin) ((const char *)(begin))[0]
-#define DATA_KEY_LNE(begin) DecodeFixed32((const char *)(begin) + 1)
-#define DATA_KEY_START(begin) ((const char *)(begin) + 5)
+// |  key len  |   key    |  version  |
+// |   2 byte  |   n byte |   4 byte  |
+#define BASE_DATA_KEY_SIZE(n) (6 + (n))
+#define DATA_KEY_LNE(begin) DecodeFixed16((const char *)(begin))
+#define DATA_KEY_START(begin) ((const char *)(begin) + 2)
 #define DATA_KEY_VERSION(begin) \
-  DecodeFixed32((const char *)(begin) + (DATA_KEY_LNE(begin) + 5))
+  DecodeFixed32((const char *)(begin) + (DATA_KEY_LNE(begin) + 2))
 
-#define SET_DATA_KEY_HEADER(begin, type, key, len, version) \
-  do {                                                      \
-    ((char *)(begin))[0] = type;                            \
-    EncodeFixed32((char *)(begin) + 1, len);                \
-    memcpy((char *)(begin) + 5, key, len);                  \
-    EncodeFixed32((char *)(begin) + (len + 5), version);    \
+#define SET_DATA_KEY_HEADER(begin, key, len, version)    \
+  do {                                                   \
+    EncodeFixed16((char *)(begin), len);                 \
+    memcpy((char *)(begin) + 2, key, len);               \
+    EncodeFixed32((char *)(begin) + (len + 2), version); \
   } while (0)
-
-#define STRING_FLAGS 's'
-#define LIST_FLAGS 'l'
-#define HASH_FLAGS 'h'
 
 namespace rockin {
 class CmdArgs;

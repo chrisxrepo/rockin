@@ -42,8 +42,7 @@ bool StringCmd::Update(int dbindex, std::shared_ptr<MemObj> obj,
     auto key = rockin::make_shared<membuf_t>(BASE_DATA_KEY_SIZE(obj->key->len) +
                                              STRING_KEY_BULK_SIZE);
 
-    SET_DATA_KEY_HEADER(key->data, STRING_FLAGS, obj->key->data, obj->key->len,
-                        obj->version);
+    SET_DATA_KEY_HEADER(key->data, obj->key->data, obj->key->len, obj->version);
     EncodeFixed16(key->data + BASE_DATA_KEY_SIZE(obj->key->len), i);
 
     auto value = rockin::make_shared<membuf_t>();
@@ -133,7 +132,7 @@ std::shared_ptr<MemObj> StringCmd::GetObj(int dbindex,
   for (int i = 0; i < bulk; i++) {
     int value_len = BASE_DATA_KEY_SIZE(key->len) + STRING_KEY_BULK_SIZE;
     auto nkey = rockin::make_shared<membuf_t>(value_len);
-    SET_DATA_KEY_HEADER(nkey->data, STRING_FLAGS, key->data, key->len, version);
+    SET_DATA_KEY_HEADER(nkey->data, key->data, key->len, version);
     EncodeFixed16(nkey->data + BASE_DATA_KEY_SIZE(key->len), i);
 
     keys.push_back(nkey);
