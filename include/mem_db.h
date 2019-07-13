@@ -39,7 +39,7 @@ struct MemObj {
   uint8_t type;
   uint8_t encode;
   uint32_t version;
-  uint64_t ttl;
+  uint64_t expire;
   MemPtr key;
   std::shared_ptr<void> value;
   std::shared_ptr<MemObj> next;
@@ -48,7 +48,7 @@ struct MemObj {
       : type(0),
         encode(0),
         version(0),
-        ttl(0),
+        expire(0),
         key(nullptr),
         value(nullptr),
         next(nullptr) {}
@@ -76,7 +76,6 @@ class MemDB {
 
  private:
   std::vector<std::shared_ptr<RedisDic<MemObj>>> dics_;
-  uv_rwlock_t rw_lock_;
 };
 
 extern MemPtr GenString(MemPtr value, int encode);

@@ -7,8 +7,6 @@
 namespace rockin {
 
 MemDB::MemDB() {
-  uv_rwlock_init(&rw_lock_);
-
   for (int i = 0; i < DBNum; i++) {
     dics_.push_back(std::make_shared<RedisDic<MemObj>>());
   }
@@ -18,26 +16,20 @@ MemDB::~MemDB() {}
 
 std::shared_ptr<MemObj> MemDB::Get(int dbindex, MemPtr key) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
-  uv_rwlock_rdlock(&rw_lock_);
   auto obj = dic->Get(key);
-  uv_rwlock_rdunlock(&rw_lock_);
 
   return obj;
 }
 
 void MemDB::Insert(int dbindex, std::shared_ptr<MemObj> obj) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
-  uv_rwlock_wrlock(&rw_lock_);
   dic->Insert(obj);
-  uv_rwlock_wrunlock(&rw_lock_);
 }
 
 // delete by key
 bool MemDB::Delete(int dbindex, MemPtr key) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
-  uv_rwlock_wrlock(&rw_lock_);
   return dic->Delete(key);
-  uv_rwlock_wrunlock(&rw_lock_);
 }
 
 void MemDB::FlushDB(int dbindex) {

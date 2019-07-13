@@ -18,8 +18,8 @@ namespace rockin {
 #define STRING_BULK(len) \
   ((len) / STRING_MAX_BULK_SIZE + (((len) % STRING_MAX_BULK_SIZE) ? 1 : 0))
 
-#define CHECK_STRING_META(o, t, e, ob, nb) \
-  ((o) != nullptr && (o)->type == (t) && (o)->encode == (e) && (ob) == (nb))
+#define CHECK_STRING_META(o, t, e, ex, ob, nb) \
+  (CHECK_META(o, t, e, ex) && (ob) == (nb))
 
 // meta key ->  key
 //
@@ -59,7 +59,7 @@ bool StringCmd::Update(int dbindex, std::shared_ptr<MemObj> obj,
                                                 STRING_META_VALUE_SIZE);
     auto str_value = OBJ_STRING(obj);
     SET_META_VALUE_HEADER(meta->data, obj->type, obj->encode, obj->version,
-                          obj->ttl);
+                          obj->expire);
     EncodeFixed16(meta->data + BASE_META_VALUE_SIZE,
                   STRING_BULK(str_value->len));
 
@@ -73,27 +73,14 @@ bool StringCmd::Update(int dbindex, std::shared_ptr<MemObj> obj,
 
 std::shared_ptr<MemObj> StringCmd::GetMeta(int dbindex, MemPtr key,
                                            uint16_t &bulk) {
+  bulk = 0;
   std::string meta;
-  auto diskdb = DiskSaver::Default()->GetDB(key);
-  if (diskdb->GetMeta(dbindex, key, &meta) &&
-      meta.length() >= BASE_META_VALUE_SIZE) {
-    auto obj = rockin::make_shared<MemObj>();
-    obj->key = key;
-    obj->type = META_VALUE_TYPE(meta.c_str());
-    obj->encode = META_VALUE_ENCODE(meta.c_str());
-    obj->version = META_VALUE_VERSION(meta.c_str());
-    obj->ttl = META_VALUE_TTL(meta.c_str());
-
-    if (obj->type == Type_String &&
-        meta.length() == BASE_META_VALUE_SIZE + STRING_META_VALUE_SIZE)
-      bulk = DecodeFixed16(meta.c_str() + BASE_META_VALUE_SIZE);
-    else
-      bulk = 0;
-
-    return obj;
+  auto obj = Cmd::GetMeta(dbindex, key, &meta);
+  if (obj != nullptr && obj->type == Type_String &&
+      meta.length() == BASE_META_VALUE_SIZE + STRING_META_VALUE_SIZE) {
+    bulk = DecodeFixed16(meta.c_str() + BASE_META_VALUE_SIZE);
   }
-
-  return nullptr;
+  return obj;
 }
 
 std::shared_ptr<MemObj> StringCmd::GetObj(int dbindex,
@@ -169,11 +156,12 @@ std::shared_ptr<MemObj> StringCmd::GetObj(int dbindex,
 std::shared_ptr<MemObj> StringCmd::AddObj(std::shared_ptr<MemDB> db,
                                           int dbindex, MemPtr key, MemPtr value,
                                           int type, int encode,
-                                          uint32_t version) {
+                                          uint32_t version, uint64_t expire) {
   auto obj = rockin::make_shared<MemObj>();
   obj->type = type;
   obj->encode = encode;
   obj->version = version;
+  obj->expire = expire;
   obj->key = key;
   obj->value = value;
   db->Insert(dbindex, obj);
@@ -184,14 +172,14 @@ std::shared_ptr<MemObj> StringCmd::AddObj(std::shared_ptr<MemDB> db,
 std::shared_ptr<MemObj> StringCmd::UpdateObj(int dbindex,
                                              std::shared_ptr<MemObj> obj,
                                              MemPtr value, int type, int encode,
-                                             int old_bulk) {
+                                             uint64_t expire, int old_bulk) {
   bool update_meta = false;
   if (old_bulk == 0 && obj->value != nullptr) {
-    update_meta = !CHECK_STRING_META(obj, type, encode,
+    update_meta = !CHECK_STRING_META(obj, type, encode, expire,
                                      (STRING_BULK(OBJ_STRING(obj)->len)),
                                      STRING_BULK(value->len));
   } else {
-    update_meta = !CHECK_STRING_META(obj, type, encode, old_bulk,
+    update_meta = !CHECK_STRING_META(obj, type, encode, expire, old_bulk,
                                      STRING_BULK(value->len));
   }
   OBJ_SET_VALUE(obj, value, type, encode);
@@ -228,26 +216,97 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
       cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
                                EventLoop *lt, std::shared_ptr<void> arg) {
         auto db = std::static_pointer_cast<MemDB>(arg);
-        uint16_t old_bulk = 0;
         auto &args = cmd_args->args();
+        static auto g_set_time_err =
+            rockin::make_shared<membuf_t>("ERR invalid expire time in set");
 
-        auto obj = db->Get(conn->index(), args[1]);
-        if (obj != nullptr) {
-          if (obj->type == Type_String && obj->encode == Encode_Raw) {
-            auto str_value = std::static_pointer_cast<membuf_t>(obj->value);
-            old_bulk = STRING_BULK(str_value->len);
+#define OBJ_SET_NO_FLAGS 0
+#define OBJ_SET_NX (1 << 0)
+#define OBJ_SET_XX (1 << 1)
+#define OBJ_SET_EX (1 << 2)
+#define OBJ_SET_PX (1 << 3)
+
+        bool is_sec = true;
+        MemPtr expire = nullptr;
+        int flags = OBJ_SET_NO_FLAGS;
+        for (int j = 3; j < args.size(); j++) {
+          MemPtr a = args[j];
+          MemPtr next = (j == args.size() - 1) ? nullptr : args[j + 1];
+
+          if (a->len == 2 && (a->data[0] == 'n' || a->data[0] == 'N') &&
+              (a->data[1] == 'x' || a->data[1] == 'X') &&
+              !(flags & OBJ_SET_XX)) {
+            flags |= OBJ_SET_NX;
+          } else if (a->len == 2 && (a->data[0] == 'x' || a->data[0] == 'X') &&
+                     (a->data[1] == 'x' || a->data[1] == 'X') &&
+                     !(flags & OBJ_SET_NX)) {
+            flags |= OBJ_SET_XX;
+          } else if (a->len == 2 && (a->data[0] == 'e' || a->data[0] == 'E') &&
+                     (a->data[1] == 'x' || a->data[1] == 'X') &&
+                     !(flags & OBJ_SET_PX) && next != nullptr) {
+            flags |= OBJ_SET_EX;
+            expire = next;
+            j++;
+          } else if (a->len == 2 && (a->data[0] == 'p' || a->data[0] == 'P') &&
+                     (a->data[1] == 'x' || a->data[1] == 'X') &&
+                     !(flags & OBJ_SET_EX) && next != nullptr) {
+            flags |= OBJ_SET_PX;
+            is_sec = false;
+            expire = next;
+            j++;
+          } else {
+            conn->ReplySyntaxError();
+            return;
           }
-        } else {
-          obj = cmd->GetMeta(conn->index(), args[1], old_bulk);
-          if (obj == nullptr) {
-            obj = rockin::make_shared<MemObj>();
-            obj->key = args[1];
-          }
-          db->Insert(conn->index(), obj);
         }
 
-        cmd->UpdateObj(conn->index(), obj, args[2], Type_String, Encode_Raw,
-                       old_bulk);
+        // get from mem
+        auto obj = db->Get(conn->index(), args[1]);
+        if (obj != nullptr && (flags & OBJ_SET_NX)) {
+          conn->ReplyNil();
+          return;
+        }
+
+        // get meta from rocksdb
+        uint16_t old_bulk = 0;
+        if (obj == nullptr) {
+          obj = cmd->GetMeta(conn->index(), args[1], old_bulk);
+          if (obj != nullptr && (flags & OBJ_SET_NX)) {
+            conn->ReplyNil();
+            return;
+          }
+        }
+
+        if (obj == nullptr && (flags & OBJ_SET_XX)) {
+          conn->ReplyNil();
+          return;
+        }
+
+        int64_t expire_time = 0;
+        if (flags & (OBJ_SET_EX | OBJ_SET_PX)) {
+          if (expire == nullptr) {
+            conn->ReplySyntaxError();
+            return;
+          }
+          if (StringToInt64(expire->data, expire->len, &expire_time) != 1 &&
+              expire_time <= 0) {
+            conn->ReplyError(g_set_time_err);
+            return;
+          }
+        }
+
+        if (expire_time > 0) {
+          if (!is_sec) expire_time *= 1000;
+          expire_time += GetMilliSec();
+        }
+
+        if (obj == nullptr) {
+          obj = cmd->AddObj(db, conn->index(), args[1], args[2], Type_String,
+                            Encode_Raw, 0, expire_time);
+        } else {
+          cmd->UpdateObj(conn->index(), obj, args[2], Type_String, Encode_Raw,
+                         expire_time, old_bulk);
+        }
         conn->ReplyOk();
       });
 }
@@ -268,22 +327,22 @@ void AppendCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           return;
         }
 
-        MemPtr str_value;
+        int64_t ret_len;
         if (obj == nullptr) {
-          str_value = args[2];
           obj = cmd->AddObj(db, conn->index(), args[1], args[2], Type_String,
-                            Encode_Raw, version);
-        } else if (obj->type == Type_String) {
+                            Encode_Raw, version, 0);
+          ret_len = args[2]->len;
+        } else {
           auto tmp_value = GenString(OBJ_STRING(obj), obj->encode);
-          str_value = rockin::make_shared<membuf_t>(
-              tmp_value->len + args[2]->len, tmp_value);
+          size_t new_len = tmp_value->len + args[2]->len;
+          auto str_value = rockin::make_shared<membuf_t>(new_len, tmp_value);
           memcpy(str_value->data + tmp_value->len, args[2]->data, args[2]->len);
-
           cmd->UpdateObj(conn->index(), obj, str_value, Type_String, Encode_Raw,
-                         0);
+                         obj->expire, STRING_BULK(OBJ_STRING(obj)->len));
+          ret_len = str_value->len;
         }
 
-        conn->ReplyInteger(str_value->len);
+        conn->ReplyInteger(ret_len);
       });
 }
 
@@ -306,10 +365,10 @@ void GetSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
         if (obj == nullptr) {
           cmd->AddObj(db, conn->index(), args[1], args[2], Type_String,
-                      Encode_Raw, version);
+                      Encode_Raw, version, 0);
         } else {
           cmd->UpdateObj(conn->index(), obj, args[2], Type_String, Encode_Raw,
-                         0);
+                         obj->expire, STRING_BULK(OBJ_STRING(obj)->len));
         }
       });
 }
@@ -362,24 +421,22 @@ void MSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         [rets, i, cmd_args, conn, cmd = shared_from_this()](
             EventLoop *lt, std::shared_ptr<void> arg) {
           auto db = std::static_pointer_cast<MemDB>(arg);
-          uint16_t old_bulk = 0;
           auto &args = cmd_args->args();
+
+          uint16_t old_bulk = 0;
           auto obj = db->Get(conn->index(), args[i * 2 + 1]);
-          if (obj != nullptr) {
-            if (obj->type == Type_String && obj->encode == Encode_Raw) {
-              auto str_value = std::static_pointer_cast<membuf_t>(obj->value);
-              old_bulk = STRING_BULK(str_value->len);
-            }
-          } else {
+          if (obj == nullptr) {
             obj = cmd->GetMeta(conn->index(), args[i * 2 + 1], old_bulk);
-            if (obj == nullptr) {
-              obj = rockin::make_shared<MemObj>();
-              obj->key = args[i * 2 + 1];
-            }
-            db->Insert(conn->index(), obj);
           }
-          cmd->UpdateObj(conn->index(), obj, args[i * 2 + 2], Type_String,
-                         Encode_Raw, old_bulk);
+
+          if (obj == nullptr) {
+            obj = cmd->AddObj(db, conn->index(), args[i * 2 + 1],
+                              args[i * 2 + 2], Type_String, Encode_Raw, 0, 0);
+          } else {
+            cmd->UpdateObj(conn->index(), obj, args[i * 2 + 2], Type_String,
+                           Encode_Raw, 0, old_bulk);
+          }
+
           rets->cnt--;
           if (rets->cnt.load() == 0) {
             conn->ReplyOk();
@@ -404,8 +461,8 @@ static void IncrDecrProcess(std::shared_ptr<StringCmd> cmd,
   if (obj == nullptr) {
     auto value = rockin::make_shared<membuf_t>(sizeof(int64_t));
     BUF_INT64(value) = num;
-    cmd->AddObj(db, conn->index(), args[1], value, Type_String, Encode_Int,
-                version);
+    obj = cmd->AddObj(db, conn->index(), args[1], value, Type_String,
+                      Encode_Int, version, 0);
   } else {
     int64_t oldv;
     if (!GenInt64(OBJ_STRING(obj), obj->encode, oldv)) {
@@ -421,7 +478,8 @@ static void IncrDecrProcess(std::shared_ptr<StringCmd> cmd,
       new_value = rockin::make_shared<membuf_t>(sizeof(int64_t));
       BUF_INT64(new_value) = oldv + num;
     }
-    cmd->UpdateObj(conn->index(), obj, new_value, Type_String, Encode_Int, 0);
+    cmd->UpdateObj(conn->index(), obj, new_value, Type_String, Encode_Int,
+                   obj->expire, 0);
   }
   conn->ReplyObj(obj);
 }
@@ -550,13 +608,13 @@ void SetBitCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         if (obj == nullptr) {
           cmd->AddObj(db, conn->index(), args[1],
                       cmd->DoSetBit(nullptr, offset, on, old_bit), Type_String,
-                      Encode_Raw, version);
+                      Encode_Raw, version, 0);
         } else {
-          int old_bulk = STRING_BULK(OBJ_STRING(obj)->len);
-          auto value = GenString(OBJ_STRING(obj), obj->encode);
           cmd->UpdateObj(conn->index(), obj,
-                         cmd->DoSetBit(value, offset, on, old_bit), Type_String,
-                         Encode_Raw, old_bulk);
+                         cmd->DoSetBit(GenString(OBJ_STRING(obj), obj->encode),
+                                       offset, on, old_bit),
+                         Type_String, Encode_Raw, obj->expire,
+                         STRING_BULK(OBJ_STRING(obj)->len));
         }
         conn->ReplyInteger(old_bit);
       });
@@ -736,24 +794,24 @@ void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
             res->data[j] = output;
           }
 
-          uint16_t old_bulk;
-          auto obj = db->Get(conn->index(), args[2]);
-          if (obj != nullptr) {
+          // get from mem
+          uint16_t old_bulk = 0;
+          auto obj = db->Get(conn->index(), args[1]);
+          if (obj == nullptr) {
+            obj = cmd->GetMeta(conn->index(), args[1], old_bulk);
+          }
+
+          if (obj == nullptr) {
+            obj = cmd->AddObj(db, conn->index(), args[1], args[2], Type_String,
+                              Encode_Raw, 0, 0);
+          } else {
             if (obj->type == Type_String && obj->encode == Encode_Raw) {
               auto str_value = std::static_pointer_cast<membuf_t>(obj->value);
               old_bulk = STRING_BULK(str_value->len);
             }
-          } else {
-            obj = cmd->GetMeta(conn->index(), args[2], old_bulk);
-            if (obj == nullptr) {
-              obj = rockin::make_shared<MemObj>();
-              obj->key = args[2];
-            }
-            db->Insert(conn->index(), obj);
+            cmd->UpdateObj(conn->index(), obj, args[2], Type_String, Encode_Raw,
+                           0, old_bulk);
           }
-
-          cmd->UpdateObj(conn->index(), obj, res, Type_String, Encode_Raw,
-                         old_bulk);
         }
 
         conn->ReplyInteger(maxlen);

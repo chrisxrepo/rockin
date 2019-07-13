@@ -6,7 +6,7 @@
 #include "utils.h"
 
 // meta value header
-// |   type   |  encode   |  version  |    ttl   |
+// |   type   |  encode   |  version  |    expire   |
 // |   1 byte |   1 byte  |   4 byte  |  8 byte  |
 #define BASE_META_VALUE_SIZE 14
 #define META_VALUE_TYPE(base) DecodeFixed8((const char *)(base))
@@ -14,12 +14,12 @@
 #define META_VALUE_VERSION(base) DecodeFixed32((const char *)(base) + 2)
 #define META_VALUE_TTL(base) DecodeFixed64((const char *)(base) + 6)
 
-#define SET_META_VALUE_HEADER(begin, type, encode, version, ttl) \
-  do {                                                           \
-    EncodeFixed8((char *)(begin), type);                         \
-    EncodeFixed8((char *)(begin) + 1, encode);                   \
-    EncodeFixed32((char *)(begin) + 2, version);                 \
-    EncodeFixed64((char *)(begin) + 6, ttl);                     \
+#define SET_META_VALUE_HEADER(begin, type, encode, version, expire) \
+  do {                                                              \
+    EncodeFixed8((char *)(begin), type);                            \
+    EncodeFixed8((char *)(begin) + 1, encode);                      \
+    EncodeFixed32((char *)(begin) + 2, version);                    \
+    EncodeFixed64((char *)(begin) + 6, expire);                     \
   } while (0)
 
 // data key header
@@ -37,6 +37,10 @@
     memcpy((char *)(begin) + 2, key, len);               \
     EncodeFixed32((char *)(begin) + (len + 2), version); \
   } while (0)
+
+#define CHECK_META(o, t, e, ex)                                \
+  ((o) != nullptr && (o)->type == (t) && (o)->encode == (e) && \
+   (o)->expire == (ex))
 
 namespace rockin {
 class CmdArgs;
@@ -58,6 +62,21 @@ class Cmd {
                   std::shared_ptr<RockinConn> conn) = 0;
 
   const CmdInfo &info() { return info_; }
+
+  std::shared_ptr<MemObj> GetMeta(int dbindex, MemPtr key, std::string *meta) {
+    auto diskdb = DiskSaver::Default()->GetDB(key);
+    if (meta && diskdb->GetMeta(dbindex, key, meta) &&
+        meta->length() >= BASE_META_VALUE_SIZE) {
+      auto obj = rockin::make_shared<MemObj>();
+      obj->key = key;
+      obj->type = META_VALUE_TYPE(meta->c_str());
+      obj->encode = META_VALUE_ENCODE(meta->c_str());
+      obj->version = META_VALUE_VERSION(meta->c_str());
+      obj->expire = META_VALUE_TTL(meta->c_str());
+      return obj;
+    }
+    return nullptr;
+  }
 
  private:
   CmdInfo info_;
