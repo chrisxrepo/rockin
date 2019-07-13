@@ -11,8 +11,6 @@
 
 namespace rockin {
 
-uint64_t g_app_time_ms;
-
 std::string GetCerr() {
   const char *errstr = strerror(errno);
   if (errstr == nullptr) {

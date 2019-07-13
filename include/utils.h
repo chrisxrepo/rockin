@@ -35,8 +35,6 @@
 
 namespace rockin {
 
-extern uint64_t g_app_time_ms;
-
 // get ctype error
 extern std::string GetCerr();
 

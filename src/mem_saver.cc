@@ -39,7 +39,7 @@ void MemSaver::Init(size_t thread_num) {
                    [](uv_timer_t *t) {
                      auto db =
                          MemSaver::Default()->dbs_[*((int *)t->data)].second;
-                     db->ScheduleTimer(g_app_time_ms);
+                     db->ScheduleTimer(GetMilliSec());
                    },
                    1000, 100);
 

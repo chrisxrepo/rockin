@@ -7,19 +7,19 @@
 
 // meta value header
 // |   type   |  encode   |  version  |    ttl   |
-// |   1 byte |   1 byte  |   4 byte  |  4 byte  |
-#define BASE_META_VALUE_SIZE 10
+// |   1 byte |   1 byte  |   4 byte  |  8 byte  |
+#define BASE_META_VALUE_SIZE 14
 #define META_VALUE_TYPE(base) DecodeFixed8((const char *)(base))
 #define META_VALUE_ENCODE(base) DecodeFixed8((const char *)(base) + 1)
 #define META_VALUE_VERSION(base) DecodeFixed32((const char *)(base) + 2)
-#define META_VALUE_TTL(base) DecodeFixed32((const char *)(base) + 6)
+#define META_VALUE_TTL(base) DecodeFixed64((const char *)(base) + 6)
 
 #define SET_META_VALUE_HEADER(begin, type, encode, version, ttl) \
   do {                                                           \
     EncodeFixed8((char *)(begin), type);                         \
     EncodeFixed8((char *)(begin) + 1, encode);                   \
     EncodeFixed32((char *)(begin) + 2, version);                 \
-    EncodeFixed32((char *)(begin) + 6, ttl);                     \
+    EncodeFixed64((char *)(begin) + 6, ttl);                     \
   } while (0)
 
 // data key header

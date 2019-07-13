@@ -46,7 +46,7 @@ class GetCmd : public StringCmd, public std::enable_shared_from_this<GetCmd> {
           std::shared_ptr<RockinConn> conn) override;
 };
 
-// SET key value
+// SET key value [EX seconds|PX milliseconds] [NX|XX]
 class SetCmd : public StringCmd, public std::enable_shared_from_this<SetCmd> {
  public:
   SetCmd(CmdInfo info) : StringCmd(info) {}

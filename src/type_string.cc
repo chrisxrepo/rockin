@@ -230,6 +230,7 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         auto db = std::static_pointer_cast<MemDB>(arg);
         uint16_t old_bulk = 0;
         auto &args = cmd_args->args();
+
         auto obj = db->Get(conn->index(), args[1]);
         if (obj != nullptr) {
           if (obj->type == Type_String && obj->encode == Encode_Raw) {

@@ -53,7 +53,7 @@ void CmdTable::Init() {
   auto get_ptr = std::make_shared<GetCmd>(CmdInfo("get", 2));
   cmd_table_.insert(std::make_pair("get", get_ptr));
 
-  auto set_ptr = std::make_shared<SetCmd>(CmdInfo("set", 3));
+  auto set_ptr = std::make_shared<SetCmd>(CmdInfo("set", -3));
   cmd_table_.insert(std::make_pair("set", set_ptr));
 
   // APPEND key value

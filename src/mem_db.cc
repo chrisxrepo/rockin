@@ -48,7 +48,7 @@ void MemDB::FlushDB(int dbindex) {
   dics_[dbindex] = std::make_shared<RedisDic<MemObj>>();
 }
 
-void MemDB::ScheduleTimer(uint32_t time) {
+void MemDB::ScheduleTimer(uint64_t time) {
   for (size_t i = 0; i < dics_.size(); i++) {
     for (int i = 0; i < 1000; i++) {
       if (!dics_[i]->RehashStep()) break;

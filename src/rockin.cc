@@ -30,13 +30,6 @@ void init_app() {
   uv_signal_t* s_user1 = (uv_signal_t*)malloc(sizeof(uv_signal_t));
   assert(uv_signal_init(uv_default_loop(), s_user1) == 0);
   uv_signal_start(s_user1, signal_handle, SIGUSR1);
-
-  // global time
-  uv_timer_t* t = (uv_timer_t*)malloc(sizeof(uv_timer_t));
-  uv_timer_init(uv_default_loop(), t);
-  uv_timer_start(
-      t, [](uv_timer_t* t) { rockin::g_app_time_ms = rockin::GetMilliSec(); },
-      1, 10);
 }
 
 int main(int argc, char** argv) {

@@ -39,7 +39,7 @@ struct MemObj {
   uint8_t type;
   uint8_t encode;
   uint32_t version;
-  uint32_t ttl;
+  uint64_t ttl;
   MemPtr key;
   std::shared_ptr<void> value;
   std::shared_ptr<MemObj> next;
@@ -72,7 +72,7 @@ class MemDB {
   // flush db
   void FlushDB(int dbindex);
 
-  void ScheduleTimer(uint32_t time);
+  void ScheduleTimer(uint64_t time);
 
  private:
   std::vector<std::shared_ptr<RedisDic<MemObj>>> dics_;
