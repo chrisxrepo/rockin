@@ -72,10 +72,10 @@ bool StringCmd::Update(int dbindex, std::shared_ptr<MemObj> obj,
 }
 
 std::shared_ptr<MemObj> StringCmd::GetMeta(int dbindex, MemPtr key,
-                                           uint16_t &bulk) {
+                                           uint16_t &bulk, uint32_t &version) {
   bulk = 0;
   std::string meta;
-  auto obj = Cmd::GetMeta(dbindex, key, &meta);
+  auto obj = Cmd::GetMeta(dbindex, key, meta, version);
   if (obj != nullptr && obj->type == Type_String &&
       meta.length() == BASE_META_VALUE_SIZE + STRING_META_VALUE_SIZE) {
     bulk = DecodeFixed16(meta.c_str() + BASE_META_VALUE_SIZE);
@@ -99,18 +99,13 @@ std::shared_ptr<MemObj> StringCmd::GetObj(int dbindex,
   }
 
   uint16_t bulk = 0;
-  obj = GetMeta(dbindex, key, bulk);
+  obj = GetMeta(dbindex, key, bulk, version);
   if (obj == nullptr) {
     return nullptr;
   }
 
   if (obj->type != Type_String) {
     type_err = true;
-    return nullptr;
-  }
-
-  version = obj->version;
-  if (obj->type == Type_None) {
     return nullptr;
   }
 
@@ -269,8 +264,9 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
         // get meta from rocksdb
         uint16_t old_bulk = 0;
+        uint32_t version = 0;
         if (obj == nullptr) {
-          obj = cmd->GetMeta(conn->index(), args[1], old_bulk);
+          obj = cmd->GetMeta(conn->index(), args[1], old_bulk, version);
           if (obj != nullptr && (flags & OBJ_SET_NX)) {
             conn->ReplyNil();
             return;
@@ -302,7 +298,7 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
         if (obj == nullptr) {
           obj = cmd->AddObj(db, conn->index(), args[1], args[2], Type_String,
-                            Encode_Raw, 0, expire_time);
+                            Encode_Raw, version, expire_time);
         } else {
           cmd->UpdateObj(conn->index(), obj, args[2], Type_String, Encode_Raw,
                          expire_time, old_bulk);
@@ -424,14 +420,17 @@ void MSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           auto &args = cmd_args->args();
 
           uint16_t old_bulk = 0;
+          uint32_t version = 0;
           auto obj = db->Get(conn->index(), args[i * 2 + 1]);
           if (obj == nullptr) {
-            obj = cmd->GetMeta(conn->index(), args[i * 2 + 1], old_bulk);
+            obj =
+                cmd->GetMeta(conn->index(), args[i * 2 + 1], old_bulk, version);
           }
 
           if (obj == nullptr) {
-            obj = cmd->AddObj(db, conn->index(), args[i * 2 + 1],
-                              args[i * 2 + 2], Type_String, Encode_Raw, 0, 0);
+            obj =
+                cmd->AddObj(db, conn->index(), args[i * 2 + 1], args[i * 2 + 2],
+                            Type_String, Encode_Raw, version, 0);
           } else {
             cmd->UpdateObj(conn->index(), obj, args[i * 2 + 2], Type_String,
                            Encode_Raw, 0, old_bulk);
@@ -796,14 +795,15 @@ void BitopCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
           // get from mem
           uint16_t old_bulk = 0;
+          uint32_t version = 0;
           auto obj = db->Get(conn->index(), args[1]);
           if (obj == nullptr) {
-            obj = cmd->GetMeta(conn->index(), args[1], old_bulk);
+            obj = cmd->GetMeta(conn->index(), args[1], old_bulk, version);
           }
 
           if (obj == nullptr) {
             obj = cmd->AddObj(db, conn->index(), args[1], args[2], Type_String,
-                              Encode_Raw, 0, 0);
+                              Encode_Raw, version, 0);
           } else {
             if (obj->type == Type_String && obj->encode == Encode_Raw) {
               auto str_value = std::static_pointer_cast<membuf_t>(obj->value);

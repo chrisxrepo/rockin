@@ -16,7 +16,8 @@ class StringCmd : public Cmd {
   StringCmd(CmdInfo info) : Cmd(info) {}
 
   // get meta from disk saver
-  std::shared_ptr<MemObj> GetMeta(int dbindex, MemPtr key, uint16_t &bulk);
+  std::shared_ptr<MemObj> GetMeta(int dbindex, MemPtr key, uint16_t &bulk,
+                                  uint32_t &version);
 
   // get obj from memsaver
   // if not exist then get obj from disksaver

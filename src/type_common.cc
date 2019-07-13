@@ -110,4 +110,187 @@ void FlushAllCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
   }
 }
 
+void TTLCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                std::shared_ptr<RockinConn> conn) {
+  MemSaver::Default()->DoCmd(
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
+        auto db = std::static_pointer_cast<MemDB>(arg);
+        auto &args = cmd_args->args();
+
+        auto obj = db->Get(conn->index(), args[1]);
+        if (obj == nullptr) {
+          std::string meta;
+          uint32_t version;
+          obj = cmd->GetMeta(conn->index(), args[1], meta, version);
+          if (obj != nullptr || obj->type == Type_None) {
+            conn->ReplyInteger(-2);
+            return;
+          }
+        }
+
+        uint64_t cur_ms = GetMilliSec();
+        if (obj->expire == 0) {
+          conn->ReplyInteger(-1);
+          return;
+        } else if (cur_ms >= obj->expire) {
+          conn->ReplyInteger(-2);
+          return;
+        }
+
+        conn->ReplyInteger((obj->expire - cur_ms) / 1000);
+      });
+}
+
+void PTTLCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                 std::shared_ptr<RockinConn> conn) {
+  MemSaver::Default()->DoCmd(
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
+        auto db = std::static_pointer_cast<MemDB>(arg);
+        auto &args = cmd_args->args();
+
+        auto obj = db->Get(conn->index(), args[1]);
+        if (obj == nullptr) {
+          std::string meta;
+          uint32_t version;
+          obj = cmd->GetMeta(conn->index(), args[1], meta, version);
+          if (obj != nullptr || obj->type == Type_None) {
+            conn->ReplyInteger(-2);
+            return;
+          }
+        }
+
+        uint64_t cur_ms = GetMilliSec();
+        if (obj->expire == 0) {
+          conn->ReplyInteger(-1);
+          return;
+        } else if (cur_ms >= obj->expire) {
+          conn->ReplyInteger(-2);
+          return;
+        }
+
+        conn->ReplyInteger(obj->expire - cur_ms);
+      });
+}
+
+static bool DoExpire(std::shared_ptr<Cmd> cmd, std::shared_ptr<MemDB> db,
+                     int dbindex, MemPtr key, uint64_t expire_ms) {
+  std::string meta_str;
+  uint32_t version;
+  auto obj_meta = cmd->GetMeta(dbindex, key, meta_str, version);
+  if (obj_meta == nullptr) return false;
+
+  auto meta_ptr = rockin::make_shared<membuf_t>(meta_str);
+  SET_META_EXPIRE(meta_ptr->data, expire_ms);
+
+  auto diskdb = DiskSaver::Default()->GetDB(key);
+  diskdb->SetMeta(dbindex, key, meta_ptr);
+
+  auto obj = db->Get(dbindex, key);
+  if (obj != nullptr) db->Update(dbindex, obj, expire_ms);
+  return true;
+}
+
+void ExpireCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                   std::shared_ptr<RockinConn> conn) {
+  MemSaver::Default()->DoCmd(
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
+        auto db = std::static_pointer_cast<MemDB>(arg);
+        auto &args = cmd_args->args();
+
+        int64_t expire_time = 0;
+        if (StringToInt64(args[2]->data, args[2]->len, &expire_time) != 1) {
+          conn->ReplyIntegerError();
+          return;
+        }
+
+        if (expire_time <= 0)
+          expire_time = GetMilliSec();
+        else
+          expire_time = GetMilliSec() + expire_time * 1000;
+
+        if (!DoExpire(cmd, db, conn->index(), args[2], expire_time))
+          conn->ReplyInteger(0);
+        else
+          conn->ReplyInteger(1);
+      });
+}
+
+void PExpireCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                    std::shared_ptr<RockinConn> conn) {
+  MemSaver::Default()->DoCmd(
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
+        auto db = std::static_pointer_cast<MemDB>(arg);
+        auto &args = cmd_args->args();
+
+        int64_t expire_time = 0;
+        if (StringToInt64(args[2]->data, args[2]->len, &expire_time) != 1) {
+          conn->ReplyIntegerError();
+          return;
+        }
+
+        if (expire_time <= 0)
+          expire_time = GetMilliSec();
+        else
+          expire_time = GetMilliSec() + expire_time * 1000;
+
+        if (!DoExpire(cmd, db, conn->index(), args[2], expire_time))
+          conn->ReplyInteger(0);
+        else
+          conn->ReplyInteger(1);
+      });
+}
+
+void ExpireAtCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                     std::shared_ptr<RockinConn> conn) {
+  MemSaver::Default()->DoCmd(
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
+        auto db = std::static_pointer_cast<MemDB>(arg);
+        auto &args = cmd_args->args();
+
+        int64_t expire_time = 0;
+        if (StringToInt64(args[2]->data, args[2]->len, &expire_time) != 1) {
+          conn->ReplyIntegerError();
+          return;
+        }
+
+        expire_time = expire_time * 1000;
+        uint64_t cur_time = GetMilliSec();
+        if (expire_time <= cur_time) expire_time = cur_time;
+
+        if (!DoExpire(cmd, db, conn->index(), args[2], expire_time))
+          conn->ReplyInteger(0);
+        else
+          conn->ReplyInteger(1);
+      });
+}
+
+void PExpireAtCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                      std::shared_ptr<RockinConn> conn) {
+  MemSaver::Default()->DoCmd(
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
+        auto db = std::static_pointer_cast<MemDB>(arg);
+        auto &args = cmd_args->args();
+
+        int64_t expire_time = 0;
+        if (StringToInt64(args[2]->data, args[2]->len, &expire_time) != 1) {
+          conn->ReplyIntegerError();
+          return;
+        }
+
+        uint64_t cur_time = GetMilliSec();
+        if (expire_time <= cur_time) expire_time = cur_time;
+
+        if (!DoExpire(cmd, db, conn->index(), args[2], expire_time))
+          conn->ReplyInteger(0);
+        else
+          conn->ReplyInteger(1);
+      });
+}
+
 }  // namespace rockin

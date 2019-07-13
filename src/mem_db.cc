@@ -25,6 +25,9 @@ void MemDB::Insert(int dbindex, std::shared_ptr<MemObj> obj) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
   dic->Insert(obj);
 }
+void MemDB::Update(int dbindex, std::shared_ptr<MemObj> obj, uint64_t expire) {
+  obj->expire = expire;
+}
 
 // delete by key
 bool MemDB::Delete(int dbindex, MemPtr key) {

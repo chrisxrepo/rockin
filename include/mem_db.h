@@ -70,6 +70,9 @@ class MemDB {
   // delete by key
   bool Delete(int dbindex, MemPtr key);
 
+  // update key expire
+  void Update(int dbindex, std::shared_ptr<MemObj> obj, uint64_t expire);
+
   // flush db
   void FlushDB(int dbindex);
 

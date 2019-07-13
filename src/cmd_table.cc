@@ -41,6 +41,30 @@ void CmdTable::Init() {
   auto select_ptr = std::make_shared<SelectCmd>(CmdInfo("select", 2));
   cmd_table_.insert(std::make_pair("select", select_ptr));
 
+  // TTL key
+  auto ttl_ptr = std::make_shared<TTLCmd>(CmdInfo("ttl", 2));
+  cmd_table_.insert(std::make_pair("ttl", ttl_ptr));
+
+  // PTTL key
+  auto pttl_ptr = std::make_shared<PTTLCmd>(CmdInfo("pttl", 2));
+  cmd_table_.insert(std::make_pair("pttl", pttl_ptr));
+
+  // EXPIRE key seconds
+  auto expire_ptr = std::make_shared<ExpireCmd>(CmdInfo("expire", 3));
+  cmd_table_.insert(std::make_pair("expire", expire_ptr));
+
+  // PEXPIRE key milliseconds
+  auto pexpire_ptr = std::make_shared<PExpireCmd>(CmdInfo("pexpire", 3));
+  cmd_table_.insert(std::make_pair("pexpire", pexpire_ptr));
+
+  // EXPIREAT key timestamp
+  auto expireat_ptr = std::make_shared<ExpireAtCmd>(CmdInfo("expireat", 3));
+  cmd_table_.insert(std::make_pair("expireat", expireat_ptr));
+
+  // PEXPIREAT key millisecond-timestam
+  auto pexpireat_ptr = std::make_shared<PExpireAtCmd>(CmdInfo("pexpireat", 3));
+  cmd_table_.insert(std::make_pair("pexpireat", pexpireat_ptr));
+
   // FLUSHDB
   auto flushdb_ptr = std::make_shared<FlushDBCmd>(CmdInfo("flushdb", 1));
   cmd_table_.insert(std::make_pair("flushdb", flushdb_ptr));
