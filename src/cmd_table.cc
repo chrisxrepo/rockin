@@ -110,6 +110,10 @@ void CmdTable::Init() {
   // BITPOS key bit[start][end]
   auto bitpos_ptr = std::make_shared<BitPosCmd>(CmdInfo("bitpos", -3));
   cmd_table_.insert(std::make_pair("bitpos", bitpos_ptr));
+
+  // STRINGDEBUG key
+  auto strdebug_ptr = std::make_shared<StringDebug>(CmdInfo("strdebug", 2));
+  cmd_table_.insert(std::make_pair("strdebug", strdebug_ptr));
 }
 
 void CmdTable::HandeCmd(std::shared_ptr<RockinConn> conn,

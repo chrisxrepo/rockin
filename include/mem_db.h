@@ -6,11 +6,12 @@
 #include "utils.h"
 
 #define OBJ_STRING(obj) std::static_pointer_cast<membuf_t>(obj->value)
-#define OBJ_SET_VALUE(o, v, t, e) \
-  do {                            \
-    o->type = t;                  \
-    o->encode = e;                \
-    o->value = v;                 \
+#define OBJ_SET_VALUE(o, v, t, e, ex) \
+  do {                                \
+    (o)->type = (t);                  \
+    (o)->encode = (e);                \
+    (o)->value = (v);                 \
+    (o)->expire = (ex);               \
   } while (0)
 
 #define BUF_INT64(v) (*((int64_t *)v->data))

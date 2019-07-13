@@ -182,7 +182,7 @@ std::shared_ptr<MemObj> StringCmd::UpdateObj(int dbindex,
     update_meta = !CHECK_STRING_META(obj, type, encode, expire, old_bulk,
                                      STRING_BULK(value->len));
   }
-  OBJ_SET_VALUE(obj, value, type, encode);
+  OBJ_SET_VALUE(obj, value, type, encode, expire);
   Update(dbindex, obj, update_meta);
   return obj;
 }
@@ -887,6 +887,45 @@ void BitPosCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
         if (pos != -1) pos += start * 8; /* Adjust for the bytes we skipped. */
         conn->ReplyInteger(pos);
+      });
+}
+
+void StringDebug::Do(std::shared_ptr<CmdArgs> cmd_args,
+                     std::shared_ptr<RockinConn> conn) {
+  MemSaver::Default()->DoCmd(
+      cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
+                               EventLoop *lt, std::shared_ptr<void> arg) {
+        auto db = std::static_pointer_cast<MemDB>(arg);
+
+        uint32_t version = 0;
+        bool type_err = false;
+        auto &args = cmd_args->args();
+        auto obj = cmd->GetObj(conn->index(), db, args[1], type_err, version);
+        if (obj == nullptr) {
+          if (type_err)
+            conn->ReplyTypeError();
+          else
+            conn->ReplyNil();
+          return;
+        }
+
+        std::vector<MemPtr> values;
+        values.push_back(
+            rockin::make_shared<membuf_t>(Format("type:%d", obj->type)));
+        values.push_back(
+            rockin::make_shared<membuf_t>(Format("encode:%d", obj->encode)));
+        values.push_back(
+            rockin::make_shared<membuf_t>(Format("version:%u", obj->version)));
+        values.push_back(
+            rockin::make_shared<membuf_t>(Format("expire:%llu", obj->expire)));
+        std::string key(obj->key->data, obj->key->len);
+        values.push_back(rockin::make_shared<membuf_t>(
+            Format("key[%d]:%s", key.length(), key.c_str())));
+        std::string value(OBJ_STRING(obj)->data, OBJ_STRING(obj)->len);
+        values.push_back(rockin::make_shared<membuf_t>(
+            Format("value[%d]:%s", value.length(), value.c_str())));
+
+        conn->ReplyArray(values);
       });
 }
 

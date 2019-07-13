@@ -187,4 +187,13 @@ class BitPosCmd : public StringCmd,
           std::shared_ptr<RockinConn> conn) override;
 };
 
+class StringDebug : public StringCmd,
+                    public std::enable_shared_from_this<StringDebug> {
+ public:
+  StringDebug(CmdInfo info) : StringCmd(info) {}
+
+  void Do(std::shared_ptr<CmdArgs> cmd_args,
+          std::shared_ptr<RockinConn> conn) override;
+};
+
 }  // namespace rockin

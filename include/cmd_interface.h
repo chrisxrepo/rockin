@@ -12,7 +12,7 @@
 #define META_VALUE_TYPE(base) DecodeFixed8((const char *)(base))
 #define META_VALUE_ENCODE(base) DecodeFixed8((const char *)(base) + 1)
 #define META_VALUE_VERSION(base) DecodeFixed32((const char *)(base) + 2)
-#define META_VALUE_TTL(base) DecodeFixed64((const char *)(base) + 6)
+#define META_VALUE_EXPIRE(base) DecodeFixed64((const char *)(base) + 6)
 
 #define SET_META_VALUE_HEADER(begin, type, encode, version, expire) \
   do {                                                              \
@@ -72,7 +72,7 @@ class Cmd {
       obj->type = META_VALUE_TYPE(meta->c_str());
       obj->encode = META_VALUE_ENCODE(meta->c_str());
       obj->version = META_VALUE_VERSION(meta->c_str());
-      obj->expire = META_VALUE_TTL(meta->c_str());
+      obj->expire = META_VALUE_EXPIRE(meta->c_str());
       return obj;
     }
     return nullptr;
