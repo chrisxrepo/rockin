@@ -17,6 +17,10 @@ MemDB::~MemDB() {}
 std::shared_ptr<MemObj> MemDB::Get(int dbindex, MemPtr key) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
   auto obj = dic->Get(key);
+  if (obj != nullptr && obj->expire > 0 && obj->expire < GetMilliSec()) {
+    dic->Delete(obj->key);
+    return nullptr;
+  }
 
   return obj;
 }
@@ -25,6 +29,7 @@ void MemDB::Insert(int dbindex, std::shared_ptr<MemObj> obj) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
   dic->Insert(obj);
 }
+
 void MemDB::Update(int dbindex, std::shared_ptr<MemObj> obj, uint64_t expire) {
   obj->expire = expire;
 }

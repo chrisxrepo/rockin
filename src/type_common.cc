@@ -123,7 +123,7 @@ void TTLCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           std::string meta;
           uint32_t version;
           obj = cmd->GetMeta(conn->index(), args[1], meta, version);
-          if (obj != nullptr || obj->type == Type_None) {
+          if (obj == nullptr) {
             conn->ReplyInteger(-2);
             return;
           }
@@ -155,7 +155,7 @@ void PTTLCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
           std::string meta;
           uint32_t version;
           obj = cmd->GetMeta(conn->index(), args[1], meta, version);
-          if (obj != nullptr || obj->type == Type_None) {
+          if (obj == nullptr) {
             conn->ReplyInteger(-2);
             return;
           }
@@ -211,7 +211,7 @@ void ExpireCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         else
           expire_time = GetMilliSec() + expire_time * 1000;
 
-        if (!DoExpire(cmd, db, conn->index(), args[2], expire_time))
+        if (!DoExpire(cmd, db, conn->index(), args[1], expire_time))
           conn->ReplyInteger(0);
         else
           conn->ReplyInteger(1);
@@ -237,7 +237,7 @@ void PExpireCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         else
           expire_time = GetMilliSec() + expire_time * 1000;
 
-        if (!DoExpire(cmd, db, conn->index(), args[2], expire_time))
+        if (!DoExpire(cmd, db, conn->index(), args[1], expire_time))
           conn->ReplyInteger(0);
         else
           conn->ReplyInteger(1);
@@ -262,7 +262,7 @@ void ExpireAtCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         uint64_t cur_time = GetMilliSec();
         if (expire_time <= cur_time) expire_time = cur_time;
 
-        if (!DoExpire(cmd, db, conn->index(), args[2], expire_time))
+        if (!DoExpire(cmd, db, conn->index(), args[1], expire_time))
           conn->ReplyInteger(0);
         else
           conn->ReplyInteger(1);
@@ -286,7 +286,7 @@ void PExpireAtCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         uint64_t cur_time = GetMilliSec();
         if (expire_time <= cur_time) expire_time = cur_time;
 
-        if (!DoExpire(cmd, db, conn->index(), args[2], expire_time))
+        if (!DoExpire(cmd, db, conn->index(), args[1], expire_time))
           conn->ReplyInteger(0);
         else
           conn->ReplyInteger(1);

@@ -72,12 +72,12 @@ class Cmd {
                                   uint32_t &version) {
     version = 0;
     auto diskdb = DiskSaver::Default()->GetDB(key);
-    if (diskdb->GetMeta(dbindex, key, &meta) &&
-        meta.length() >= BASE_META_VALUE_SIZE) {
+    bool exist = diskdb->GetMeta(dbindex, key, &meta);
+    if (exist && meta.length() >= BASE_META_VALUE_SIZE) {
       version = META_VALUE_VERSION(meta.c_str());
       uint8_t type = META_VALUE_TYPE(meta.c_str());
-      uint32_t expire = META_VALUE_EXPIRE(meta.c_str());
-      if (type == Type_None || expire <= GetMilliSec()) {
+      uint64_t expire = META_VALUE_EXPIRE(meta.c_str());
+      if (type == Type_None || (expire > 0 && expire <= GetMilliSec())) {
         return nullptr;
       }
 

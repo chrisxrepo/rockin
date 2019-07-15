@@ -221,7 +221,6 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 #define OBJ_SET_EX (1 << 2)
 #define OBJ_SET_PX (1 << 3)
 
-        bool is_sec = true;
         MemPtr expire = nullptr;
         int flags = OBJ_SET_NO_FLAGS;
         for (int j = 3; j < args.size(); j++) {
@@ -246,7 +245,6 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                      (a->data[1] == 'x' || a->data[1] == 'X') &&
                      !(flags & OBJ_SET_EX) && next != nullptr) {
             flags |= OBJ_SET_PX;
-            is_sec = false;
             expire = next;
             j++;
           } else {
@@ -292,7 +290,7 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         }
 
         if (expire_time > 0) {
-          if (!is_sec) expire_time *= 1000;
+          if (flags & OBJ_SET_EX) expire_time *= 1000;
           expire_time += GetMilliSec();
         }
 
