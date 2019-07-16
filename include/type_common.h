@@ -4,7 +4,7 @@
 #include "cmd_table.h"
 #include "utils.h"
 
-#define DBNum 16
+#define DBNum 1
 
 namespace rockin {
 class RockinConn;

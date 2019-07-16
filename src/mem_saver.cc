@@ -31,19 +31,32 @@ void MemSaver::Init(size_t thread_num) {
     EventLoop *et = new EventLoop();
     dbs_.push_back(std::make_pair(et, db));
 
-    uv_timer_t *t = (uv_timer_t *)malloc(sizeof(uv_timer_t));
-    uv_timer_init(et->loop(), t);
-    t->data = malloc(sizeof(i));
-    *((int *)t->data) = i;
-    uv_timer_start(t,
+    uv_timer_t *reshah_timer = (uv_timer_t *)malloc(sizeof(uv_timer_t));
+    uv_timer_init(et->loop(), reshah_timer);
+    reshah_timer->data = malloc(sizeof(i));
+    *((int *)reshah_timer->data) = i;
+    uv_timer_start(reshah_timer,
                    [](uv_timer_t *t) {
                      auto db =
                          MemSaver::Default()->dbs_[*((int *)t->data)].second;
-                     db->ScheduleTimer(GetMilliSec());
+                     db->RehashTimer(GetMilliSec());
                    },
-                   1000, 100);
+                   10, 100);
+
+    uv_timer_t *expire_timer = (uv_timer_t *)malloc(sizeof(uv_timer_t));
+    uv_timer_init(et->loop(), expire_timer);
+    expire_timer->data = malloc(sizeof(i));
+    *((int *)expire_timer->data) = i;
+    uv_timer_start(expire_timer,
+                   [](uv_timer_t *t) {
+                     auto db =
+                         MemSaver::Default()->dbs_[*((int *)t->data)].second;
+                     db->ExpireTimer(GetMilliSec());
+                   },
+                   50, 100);
 
     et->Start();
+
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 }

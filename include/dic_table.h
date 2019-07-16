@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <string.h>
+#include <functional>
 #include <iostream>
 #include "rockin_alloc.h"
 #include "siphash.h"
@@ -10,65 +11,67 @@
 
 namespace rockin {
 
-template <typename Node>
-class RedisDic {
-  // table
-  struct DicTable {
+template <typename T>
+class DicTable {
+ public:
+  struct Node {
+    std::shared_ptr<T> data;
+    Node* next;
+  };
+
+  struct Table {
     uint32_t size;
     uint32_t sizemask;
     uint32_t used;
-    std::shared_ptr<Node>* head;
+    Node** head;
   };
 
- public:
-  RedisDic() : rehashidx_(-1) {
+  DicTable(std::function<bool(std::shared_ptr<T>, std::shared_ptr<T>)> equal,
+           std::function<uint64_t(std::shared_ptr<T>)> hash)
+      : rehashidx_(-1), equal_(equal), hash_(hash) {
     for (int i = 0; i < 2; i++) {
-      table_[i] = (DicTable*)malloc(sizeof(DicTable));
+      table_[i] = (Table*)malloc(sizeof(Table));
       table_[i]->size = 0;
       table_[i]->used = 0;
       table_[i]->sizemask = 0;
       table_[i]->head = nullptr;
     }
-
-    unsigned char seed[16];
-    RandomBytes(seed, 16);
-    hash_ = new SipHash(seed);
   }
 
-  std::shared_ptr<Node> Get(MemPtr key) {
+  Node* Get(std::shared_ptr<T> key) {
     if (table_[0]->used + table_[1]->used == 0) {
       return nullptr;
     }
     RehashStep();
 
-    uint64_t h = hash_->Hash((unsigned char*)key->data, key->len);
+    uint64_t h = hash_(key);
     for (int i = 0; i < 2; i++) {
       if (table_[i]->size == 0) continue;
 
       uint64_t idx = h & table_[i]->sizemask;
-      auto node = table_[i]->head[idx];
+      Node* node = table_[i]->head[idx];
       while (node) {
-        if (*(node->key.get()) == *(key.get())) return node;
+        if (equal_(key, node->data)) return node;
         node = node->next;
       }
     }
     return nullptr;
   }
 
-  bool Delete(MemPtr key) {
+  bool Delete(std::shared_ptr<T> key) {
     if (table_[0]->used + table_[1]->used == 0) {
       return false;
     }
 
-    uint64_t h = hash_->Hash((unsigned char*)key->data, key->len);
+    uint64_t h = hash_(key);
     for (int i = 0; i < 2; i++) {
       if (table_[i]->size == 0) continue;
 
       uint64_t idx = h & table_[i]->sizemask;
-      auto node = table_[i]->head[idx];
-      std::shared_ptr<Node> prev = nullptr;
+      Node* node = table_[i]->head[idx];
+      Node* prev = nullptr;
       while (node) {
-        if (*(node->key.get()) == *(key.get())) {
+        if (equal_(key, node->data)) {
           if (prev == nullptr) {
             table_[i]->head[idx] = node->next;
           } else {
@@ -84,14 +87,15 @@ class RedisDic {
     return false;
   }
 
-  size_t Size() { return table_[0]->used + table_[1]->used; }
+  size_t Size() {
+    //...
+    return table_[0]->used + table_[1]->used;
+  }
 
-  void Insert(std::shared_ptr<Node> node) {
+  void Insert(Node* node) {
     this->Expand();
 
-    uint64_t idx =
-        hash_->Hash((unsigned char*)node->key->data, node->key->len) &
-        table_[0]->sizemask;
+    uint64_t idx = hash_(node->data) & table_[0]->sizemask;
 
     node->next = table_[0]->head[idx];
     table_[0]->head[idx] = node;
@@ -114,13 +118,14 @@ class RedisDic {
     table_[0]->size = resize;
     table_[0]->sizemask = resize - 1;
     table_[0]->used = 0;
-    table_[0]->head = new std::shared_ptr<Node>[resize];
+    table_[0]->head = (Node**)malloc(sizeof(Node*) * resize);
+    memset(table_[0]->head, 0, sizeof(Node*) * resize);
     if (table_[1]->used > 0) rehashidx_ = 0;
   }
 
   bool RehashStep() {
     if (rehashidx_ != -1) {
-      Rehash(4);
+      Rehash(1);
       return true;
     }
     return false;
@@ -132,9 +137,9 @@ class RedisDic {
     }
 
     while (n > 0 && rehashidx_ < table_[1]->size) {
-      auto node = table_[1]->head[rehashidx_];
+      Node* node = table_[1]->head[rehashidx_];
       while (node) {
-        auto next_ = node->next;
+        Node* next_ = node->next;
         Insert(node);
         table_[1]->used--;
         node = next_;
@@ -155,8 +160,9 @@ class RedisDic {
   }
 
  private:
-  SipHash* hash_;
-  DicTable* table_[2];
+  Table* table_[2];
   int32_t rehashidx_;
+  std::function<bool(std::shared_ptr<T>, std::shared_ptr<T>)> equal_;
+  std::function<uint64_t(std::shared_ptr<T>)> hash_;
 };
 }  // namespace rockin

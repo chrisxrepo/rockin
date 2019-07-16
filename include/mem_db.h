@@ -1,8 +1,9 @@
 #pragma once
 #include <uv.h>
 #include <vector>
-#include "redis_dic.h"
+#include "dic_table.h"
 #include "rockin_alloc.h"
+#include "siphash.h"
 #include "utils.h"
 
 #define OBJ_STRING(obj) std::static_pointer_cast<membuf_t>(obj->value)
@@ -54,6 +55,15 @@ struct MemObj {
         value(nullptr),
         next(nullptr) {}
 
+  MemObj(MemPtr key_)
+      : type(0),
+        encode(0),
+        version(0),
+        expire(0),
+        key(key_),
+        value(nullptr),
+        next(nullptr) {}
+
   size_t Size() { return sizeof(MemObj); }
 };
 
@@ -62,7 +72,8 @@ class MemDB {
   MemDB();
   ~MemDB();
 
-  // get
+  DicTable<MemObj>::Node *GetNode(int dbindex, MemPtr key);
+
   std::shared_ptr<MemObj> Get(int dbindex, MemPtr key);
 
   void Insert(int dbindex, std::shared_ptr<MemObj> obj);
@@ -76,10 +87,14 @@ class MemDB {
   // flush db
   void FlushDB(int dbindex);
 
-  void ScheduleTimer(uint64_t time);
+  void RehashTimer(uint64_t time);
+  void ExpireTimer(uint64_t time);
 
  private:
-  std::vector<std::shared_ptr<RedisDic<MemObj>>> dics_;
+  bool DoRehash();
+
+ private:
+  std::vector<std::shared_ptr<DicTable<MemObj>>> dics_;
 };
 
 extern MemPtr GenString(MemPtr value, int encode);
