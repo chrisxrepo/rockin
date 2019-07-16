@@ -188,7 +188,7 @@ static bool DoExpire(std::shared_ptr<Cmd> cmd, std::shared_ptr<MemDB> db,
   diskdb->SetMeta(dbindex, key, meta_ptr);
 
   auto obj = db->Get(dbindex, key);
-  if (obj != nullptr) db->Update(dbindex, obj, expire_ms);
+  if (obj != nullptr) db->UpdateExpire(obj, expire_ms);
   return true;
 }
 

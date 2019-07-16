@@ -43,11 +43,11 @@ int main(int argc, char** argv) {
   // init handle
   rockin::CmdTable::Default()->Init();
 
-  // redis work thread pool
-  rockin::MemSaver::Default()->Init(4);
+  // work thread pool
+  rockin::MemSaver::Default()->Init(1);
 
   // listern server
-  rockin::RockinServer::Default()->Init(2);
+  rockin::RockinServer::Default()->Init(1);
   if (rockin::RockinServer::Default()->Service(9000) == false) {
     LOG(ERROR) << "start service fail";
     return -1;

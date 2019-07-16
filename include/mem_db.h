@@ -4,20 +4,24 @@
 #include "dic_table.h"
 #include "rockin_alloc.h"
 #include "siphash.h"
+#include "skip_list.h"
 #include "utils.h"
 
+#define EXPIRE_SKIPLIST_LEVEL 3
+
 #define OBJ_STRING(obj) std::static_pointer_cast<membuf_t>(obj->value)
-#define OBJ_SET_VALUE(o, v, t, e, ex) \
-  do {                                \
-    (o)->type = (t);                  \
-    (o)->encode = (e);                \
-    (o)->value = (v);                 \
-    (o)->expire = (ex);               \
+#define OBJ_SET_VALUE(o, v, t, e) \
+  do {                            \
+    (o)->type = (t);              \
+    (o)->encode = (e);            \
+    (o)->value = (v);             \
   } while (0)
 
 #define BUF_INT64(v) (*((int64_t *)v->data))
 
 namespace rockin {
+struct ExpireNode;
+
 enum ValueType {
   Type_None = 0,
   Type_String = 1,
@@ -81,8 +85,8 @@ class MemDB {
   // delete by key
   bool Delete(int dbindex, MemPtr key);
 
-  // update key expire
-  void Update(int dbindex, std::shared_ptr<MemObj> obj, uint64_t expire);
+  // add key expire
+  void UpdateExpire(std::shared_ptr<MemObj> obj, uint64_t expire_ms);
 
   // flush db
   void FlushDB(int dbindex);
@@ -95,6 +99,7 @@ class MemDB {
 
  private:
   std::vector<std::shared_ptr<DicTable<MemObj>>> dics_;
+  SkipList<MemObj, EXPIRE_SKIPLIST_LEVEL> *expire_list_;
 };
 
 extern MemPtr GenString(MemPtr value, int encode);

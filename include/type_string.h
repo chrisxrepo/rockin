@@ -27,11 +27,12 @@ class StringCmd : public Cmd {
   // add obj
   std::shared_ptr<MemObj> AddObj(std::shared_ptr<MemDB> db, int dbindex,
                                  MemPtr key, MemPtr value, int type, int encode,
-                                 uint32_t version, uint64_t expire);
+                                 uint32_t version, uint64_t expire_ms);
 
-  std::shared_ptr<MemObj> UpdateObj(int dbindex, std::shared_ptr<MemObj> obj,
-                                    MemPtr value, int type, int encode,
-                                    uint64_t expire, int old_bulk);
+  std::shared_ptr<MemObj> UpdateObj(std::shared_ptr<MemDB> db, int dbindex,
+                                    std::shared_ptr<MemObj> obj, MemPtr value,
+                                    int type, int encode, uint64_t expire_ms,
+                                    int old_bulk);
 
  private:
   // udpate string

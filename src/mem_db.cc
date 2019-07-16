@@ -7,34 +7,71 @@
 namespace rockin {
 static SipHash *g_db_hash = nullptr;
 
-static std::shared_ptr<DicTable<MemObj>> make_dic() {
-  auto db = std::make_shared<DicTable<MemObj>>(
-      [](std::shared_ptr<MemObj> a, std::shared_ptr<MemObj> b) {
-        if (a == nullptr || a->key == nullptr || b == nullptr ||
-            b->key == nullptr)
-          return false;
+static uint64_t obj_key_hash(std::shared_ptr<MemObj> obj) {
+  return g_db_hash->Hash((const uint8_t *)obj->key->data, obj->key->len);
+}
 
-        if (a->key->len != b->key->len) return false;
-        for (size_t i = 0; i < a->key->len; i++) {
-          if (*((char *)(a->key->data) + i) != *((char *)(b->key->data) + i)) {
-            return false;
-          }
-        }
-        return true;
-      },
-      [](std::shared_ptr<MemObj> key) {
-        return g_db_hash->Hash((const uint8_t *)key->key->data, key->key->len);
-      });
+static bool obj_key_equal(std::shared_ptr<MemObj> a,
+                          std::shared_ptr<MemObj> b) {
+  if ((a == nullptr || a->key == nullptr) &&
+      (b == nullptr || b->key == nullptr))
+    return true;
 
-  return db;
+  if (a == nullptr || a->key == nullptr || b == nullptr || b->key == nullptr)
+    return false;
+
+  if (a->key->len != b->key->len) return false;
+  for (size_t i = 0; i < a->key->len; i++) {
+    if (*((char *)(a->key->data) + i) != *((char *)(b->key->data) + i)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static int obj_key_compare(std::shared_ptr<MemObj> a,
+                           std::shared_ptr<MemObj> b) {
+  if ((a == nullptr || a->key == nullptr) &&
+      (b == nullptr || b->key == nullptr))
+    return 0;
+  if (a == nullptr || a->key == nullptr) return -1;
+  if (b == nullptr || b->key == nullptr) return 1;
+
+  for (size_t i = 0; i < a->key->len && i < b->key->len; i++) {
+    uint8_t ac = *((uint8_t *)(a->key->data) + i);
+    uint8_t bc = *((uint8_t *)(b->key->data) + i);
+    if (ac > bc) return 1;
+    if (ac < bc) return -1;
+  }
+
+  if (a->key->len > b->key->len) return 1;
+  if (a->key->len < b->key->len) return -1;
+  return 0;
 }
 
 MemDB::MemDB() {
   if (g_db_hash == nullptr) g_db_hash = new SipHash();
 
   for (int i = 0; i < DBNum; i++) {
-    dics_.push_back(make_dic());
+    dics_.push_back(
+        std::make_shared<DicTable<MemObj>>(obj_key_equal, obj_key_hash));
   }
+
+  expire_list_ = new SkipList<MemObj, EXPIRE_SKIPLIST_LEVEL>(
+      [](std::shared_ptr<MemObj> a, std::shared_ptr<MemObj> b) {
+        if (a == nullptr && b == nullptr) return 0;
+        if (a == nullptr) return -1;
+        if (b == nullptr) return 1;
+        if (a->expire > b->expire) return 1;
+        if (a->expire < b->expire) return -1;
+        return obj_key_compare(a, b);
+      },
+      [](std::shared_ptr<MemObj> a, std::shared_ptr<MemObj> b) {
+        if (a == nullptr && b == nullptr) return true;
+        if (a == nullptr || b == nullptr) return false;
+        if (a->expire != b->expire) return false;
+        return obj_key_equal(a, b);
+      });
 }
 
 MemDB::~MemDB() {}
@@ -45,6 +82,7 @@ DicTable<MemObj>::Node *MemDB::GetNode(int dbindex, MemPtr key) {
   DicTable<MemObj>::Node *node = db->Get(tmpkey);
   if (node != nullptr && node->data != nullptr && node->data->expire > 0 &&
       node->data->expire < GetMilliSec()) {
+    expire_list_->Delete(node->data);
     db->Delete(tmpkey);
     return nullptr;
   }
@@ -63,15 +101,31 @@ void MemDB::Insert(int dbindex, std::shared_ptr<MemObj> obj) {
   node->data = obj;
   node->next = nullptr;
   dic->Insert(node);
+  if (obj->expire > 0) expire_list_->Insert(obj);
 }
 
-void MemDB::Update(int dbindex, std::shared_ptr<MemObj> obj, uint64_t expire) {
-  // obj->expire = expire;
+void MemDB::UpdateExpire(std::shared_ptr<MemObj> obj, uint64_t expire_ms) {
+  if (obj == nullptr || obj->key == nullptr || obj->expire == expire_ms) return;
+  if (obj->expire > 0) expire_list_->Delete(obj);
+  obj->expire = expire_ms;
+  if (expire_ms > 0) expire_list_->Insert(obj);
+
+  /*  std::cout << "Expire List:";
+   expire_list_->Range([](std::shared_ptr<MemObj> obj) {
+     std::cout << std::string(obj->key->data, obj->key->len) << ":"
+               << obj->expire << " ";
+     return true;
+   });
+   std::cout << std::endl;
+   */
 }
 
 // delete by key
 bool MemDB::Delete(int dbindex, MemPtr key) {
   auto dic = dics_[(dbindex > 0 && dbindex < DBNum) ? dbindex : 0];
+  auto obj = Get(dbindex, key);
+  if (obj == nullptr) return false;
+  if (obj->expire > 0) expire_list_->Delete(obj);
   return dic->Delete(std::make_shared<MemObj>(key));
 }
 
@@ -80,7 +134,8 @@ void MemDB::FlushDB(int dbindex) {
     return;
   }
 
-  dics_[dbindex] = make_dic();
+  dics_[dbindex] =
+      std::make_shared<DicTable<MemObj>>(obj_key_equal, obj_key_hash);
 }
 
 void MemDB::RehashTimer(uint64_t time) {
