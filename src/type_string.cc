@@ -180,7 +180,7 @@ std::shared_ptr<MemObj> StringCmd::UpdateObj(std::shared_ptr<MemDB> db,
                                      STRING_BULK(value->len));
   }
   OBJ_SET_VALUE(obj, value, type, encode);
-  db->UpdateExpire(obj, expire_ms);
+  db->UpdateExpire(dbindex, obj, expire_ms);
   Update(dbindex, obj, update_meta);
   return obj;
 }

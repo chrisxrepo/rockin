@@ -86,7 +86,8 @@ class MemDB {
   bool Delete(int dbindex, MemPtr key);
 
   // add key expire
-  void UpdateExpire(std::shared_ptr<MemObj> obj, uint64_t expire_ms);
+  void UpdateExpire(int dbindex, std::shared_ptr<MemObj> obj,
+                    uint64_t expire_ms);
 
   // flush db
   void FlushDB(int dbindex);
@@ -95,11 +96,9 @@ class MemDB {
   void ExpireTimer(uint64_t time);
 
  private:
-  bool DoRehash();
-
- private:
   std::vector<std::shared_ptr<DicTable<MemObj>>> dics_;
-  SkipList<MemObj, EXPIRE_SKIPLIST_LEVEL> *expire_list_;
+  std::vector<std::shared_ptr<SkipList<MemObj, EXPIRE_SKIPLIST_LEVEL>>>
+      expires_;
 };
 
 extern MemPtr GenString(MemPtr value, int encode);
