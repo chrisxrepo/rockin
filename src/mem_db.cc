@@ -180,10 +180,6 @@ void MemDB::ExpireTimer(uint64_t time) {
         dics_[i]->Delete(*iter);
         expires_[i]->Delete(*iter);
       }
-
-      if (expire_count > 0)
-        std::cout << "db" << i << ": remove expire obj " << expire_objs.size()
-                  << std::endl;
     }
 
     if (GetMilliSec() - time >= 1) break;

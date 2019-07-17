@@ -48,8 +48,8 @@ DiskDB::DiskDB(int partion_id, const std::string partition_name,
     rocksdb::ColumnFamilyOptions cf_ops;
     cf_ops.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_ops));
     cf_ops.compaction_filter_factory =
-        std::make_shared<DataCompactFilterFactory>(filter_name, &mt_handles_,
-                                                   i);
+        std::make_shared<DataCompactFilterFactory>(filter_name, &db_,
+                                                   &mt_handles_, i);
     column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, cf_ops));
   }
 
@@ -287,6 +287,29 @@ bool DiskDB::SetMetasDatas(int db, const KVPairS &metas, const KVPairS &kvs) {
   }
 
   return true;
+}
+
+void DiskDB::Compact() {
+  LOG(INFO) << "Start to compct rocksdb:" << partition_name_;
+  for (size_t i = 0; i < mt_handles_.size(); i++) {
+    auto status = db_->CompactRange(rocksdb::CompactRangeOptions(),
+                                    mt_handles_[i], nullptr, nullptr);
+
+    if (!status.ok()) {
+      LOG(ERROR) << "Compact partition:" << partition_name_
+                 << ", metadata:" << i << ", error:" << status.ToString();
+    }
+  }
+
+  for (size_t i = 0; i < db_handles_.size(); i++) {
+    auto status = db_->CompactRange(rocksdb::CompactRangeOptions(),
+                                    db_handles_[i], nullptr, nullptr);
+
+    if (!status.ok()) {
+      LOG(ERROR) << "Compact partition:" << partition_name_ << ", dbdata:" << i
+                 << ", error:" << status.ToString();
+    }
+  }
 }
 
 }  // namespace rockin

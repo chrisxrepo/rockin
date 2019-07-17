@@ -13,7 +13,7 @@ class MetaCompactFilter : public rocksdb::CompactionFilter {
 
   const char* Name() const override { return name_.c_str(); }
 
-  private:
+ private:
   std::string name_;
 };
 
@@ -33,7 +33,7 @@ class MetaCompactFilterFactory : public rocksdb::CompactionFilterFactory {
 //////////////////////////////////////////////////////////////////
 class DataCompactFilter : public rocksdb::CompactionFilter {
  public:
-  DataCompactFilter(const std::string& name,
+  DataCompactFilter(const std::string& name, rocksdb::DB* db,
                     rocksdb::ColumnFamilyHandle* handle);
 
   bool Filter(int level, const rocksdb::Slice& key,
@@ -44,12 +44,13 @@ class DataCompactFilter : public rocksdb::CompactionFilter {
 
  private:
   std::string name_;
+  rocksdb::DB* db_;
   rocksdb::ColumnFamilyHandle* handle_;
 };
 
 class DataCompactFilterFactory : public rocksdb::CompactionFilterFactory {
  public:
-  DataCompactFilterFactory(const std::string& name,
+  DataCompactFilterFactory(const std::string& name, rocksdb::DB** db,
                            std::vector<rocksdb::ColumnFamilyHandle*>* mt_handls,
                            int index);
 
@@ -60,6 +61,7 @@ class DataCompactFilterFactory : public rocksdb::CompactionFilterFactory {
 
  private:
   std::string name_;
+  rocksdb::DB** db_;
   std::vector<rocksdb::ColumnFamilyHandle*>* mt_handls_;
   int index_;
 };

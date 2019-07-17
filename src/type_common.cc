@@ -2,6 +2,7 @@
 #include <glog/logging.h>
 #include <jemalloc/jemalloc.h>
 #include "cmd_args.h"
+#include "disk_saver.h"
 #include "mem_db.h"
 #include "mem_saver.h"
 #include "rockin_conn.h"
@@ -291,6 +292,12 @@ void PExpireAtCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
         else
           conn->ReplyInteger(1);
       });
+}
+
+void CompactCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
+                    std::shared_ptr<RockinConn> conn) {
+  DiskSaver::Default()->Compact();
+  conn->ReplyOk();
 }
 
 }  // namespace rockin

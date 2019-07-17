@@ -73,6 +73,10 @@ void CmdTable::Init() {
   auto flushall_ptr = std::make_shared<FlushAllCmd>(CmdInfo("flushall", 1));
   cmd_table_.insert(std::make_pair("flushall", flushall_ptr));
 
+  // COMPACT
+  auto compact_ptr = std::make_shared<CompactCmd>(CmdInfo("compact", 1));
+  cmd_table_.insert(std::make_pair("compact", compact_ptr));
+
   // GET key
   auto get_ptr = std::make_shared<GetCmd>(CmdInfo("get", 2));
   cmd_table_.insert(std::make_pair("get", get_ptr));

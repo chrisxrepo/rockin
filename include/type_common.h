@@ -137,4 +137,13 @@ class PExpireAtCmd : public Cmd,
   void Do(std::shared_ptr<CmdArgs> cmd_args,
           std::shared_ptr<RockinConn> conn) override;
 };
+
+// COMPACT
+class CompactCmd : public Cmd, public std::enable_shared_from_this<CompactCmd> {
+ public:
+  CompactCmd(CmdInfo info) : Cmd(info) {}
+
+  void Do(std::shared_ptr<CmdArgs> cmd_args,
+          std::shared_ptr<RockinConn> conn) override;
+};
 }  // namespace rockin

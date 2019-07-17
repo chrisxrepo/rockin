@@ -86,4 +86,10 @@ std::shared_ptr<DiskDB> DiskSaver::GetDB(MemPtr key) {
   return partitions_[index];
 }
 
+void DiskSaver::Compact() {
+  for (size_t i = 0; i < partitions_.size(); i++) {
+    partitions_[i]->Compact();
+  }
+}
+
 }  // namespace rockin

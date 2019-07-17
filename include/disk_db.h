@@ -62,6 +62,9 @@ class DiskDB {
   // set multimeta and multidata
   bool SetMetasDatas(int db, const KVPairS &metas, const KVPairS &kvs);
 
+  // compact rocksdb
+  void Compact();
+
  private:
   int partition_id_;
   std::string partition_name_;

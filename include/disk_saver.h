@@ -24,6 +24,8 @@ class DiskSaver {
   // get diskdb
   std::shared_ptr<DiskDB> GetDB(MemPtr key);
 
+  void Compact();
+
  private:
   std::string path_;
   size_t partition_num_;
