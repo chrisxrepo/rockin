@@ -74,6 +74,8 @@ MemDB::MemDB() {
 
     expires_.push_back(expire);
   }
+
+  uv_rwlock_init(&rwlock_);
 }
 
 MemDB::~MemDB() {}
@@ -81,13 +83,25 @@ MemDB::~MemDB() {}
 DicTable<MemObj>::Node *MemDB::GetNode(int dbindex, MemPtr key) {
   int idx = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
   auto tmpkey = std::make_shared<MemObj>(key);
+
+  // std::cout << "uv_rwlock_rdlock" << std::endl;
+  uv_rwlock_rdlock(&rwlock_);
+  // std::cout << "uv_rwlock_rdlock ok" << std::endl;
+
   DicTable<MemObj>::Node *node = dics_[idx]->Get(tmpkey);
-  if (node != nullptr && node->data != nullptr && node->data->expire > 0 &&
-      node->data->expire < GetMilliSec()) {
-    expires_[idx]->Delete(node->data);
-    dics_[idx]->Delete(tmpkey);
-    return nullptr;
-  }
+
+  // std::cout << "uv_rwlock_rdunlock" << std::endl;
+  uv_rwlock_rdunlock(&rwlock_);
+  // std::cout << "uv_rwlock_rdunlock ok" << std::endl;
+  /*
+    if (node != nullptr && node->data != nullptr && node->data->expire > 0 &&
+        node->data->expire < GetMilliSec()) {
+      expires_[idx]->Delete(node->data);
+      dics_[idx]->Delete(tmpkey);
+      return nullptr;
+    }
+    */
+
   return node;
 }
 
@@ -102,19 +116,28 @@ void MemDB::Insert(int dbindex, std::shared_ptr<MemObj> obj) {
   DicTable<MemObj>::Node *node = new DicTable<MemObj>::Node;
   node->data = obj;
   node->next = nullptr;
+
+  // std::cout << "uv_rwlock_wrlock" << std::endl;
+  uv_rwlock_wrlock(&rwlock_);
+  //  std::cout << "uv_rwlock_wrlock ok" << std::endl;
+
   dics_[idx]->Insert(node);
-  if (obj->expire > 0) expires_[idx]->Insert(obj);
+
+  //  std::cout << "uv_rwlock_wrunlock" << std::endl;
+  uv_rwlock_wrunlock(&rwlock_);
+  //  std::cout << "uv_rwlock_wrunlock ok" << std::endl;
+
+  // if (obj->expire > 0) expires_[idx]->Insert(obj);
 }
 
 void MemDB::UpdateExpire(int dbindex, std::shared_ptr<MemObj> obj,
                          uint64_t expire_ms) {
-  if (obj == nullptr || obj->key == nullptr || obj->expire == expire_ms) return;
-  int idx = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
-  if (obj->expire > 0) expires_[idx]->Delete(obj);
-  obj->expire = expire_ms;
-  if (expire_ms > 0) expires_[idx]->Insert(obj);
+  /* if (obj == nullptr || obj->key == nullptr || obj->expire == expire_ms)
+  return; int idx = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0; if
+  (obj->expire > 0) expires_[idx]->Delete(obj); obj->expire = expire_ms; if
+  (expire_ms > 0) expires_[idx]->Insert(obj);
 
-  /*  std::cout << "Expire List:";
+    std::cout << "Expire List:";
    expire_list_->Range([](std::shared_ptr<MemObj> obj) {
      std::cout << std::string(obj->key->data, obj->key->len) << ":"
                << obj->expire << " ";
@@ -126,11 +149,13 @@ void MemDB::UpdateExpire(int dbindex, std::shared_ptr<MemObj> obj,
 
 // delete by key
 bool MemDB::Delete(int dbindex, MemPtr key) {
-  int idx = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
+  /* int idx = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
   auto obj = Get(dbindex, key);
   if (obj == nullptr) return false;
   if (obj->expire > 0) expires_[idx]->Delete(obj);
   return dics_[idx]->Delete(std::make_shared<MemObj>(key));
+  */
+  return true;
 }
 
 void MemDB::FlushDB(int dbindex) {

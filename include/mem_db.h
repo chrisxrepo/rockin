@@ -99,6 +99,7 @@ class MemDB {
   std::vector<std::shared_ptr<DicTable<MemObj>>> dics_;
   std::vector<std::shared_ptr<SkipList<MemObj, EXPIRE_SKIPLIST_LEVEL>>>
       expires_;
+  uv_rwlock_t rwlock_;
 };
 
 extern MemPtr GenString(MemPtr value, int encode);

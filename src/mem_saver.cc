@@ -31,7 +31,7 @@ void MemSaver::Init(size_t thread_num) {
     EventLoop *et = new EventLoop();
     dbs_.push_back(std::make_pair(et, db));
 
-    uv_timer_t *reshah_timer = (uv_timer_t *)malloc(sizeof(uv_timer_t));
+    /* uv_timer_t *reshah_timer = (uv_timer_t *)malloc(sizeof(uv_timer_t));
     uv_timer_init(et->loop(), reshah_timer);
     reshah_timer->data = malloc(sizeof(i));
     *((int *)reshah_timer->data) = i;
@@ -56,15 +56,16 @@ void MemSaver::Init(size_t thread_num) {
                    50, 100);
 
     et->Start();
-
+*/
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 }
 
-void MemSaver::DoCmd(MemPtr key, EventLoop::LoopCallback cb) {
+void MemSaver::DoCmd(MemPtr key, EventLoop::LoopCallback callback) {
   uint64_t h = hash_->Hash((const uint8_t *)key->data, key->len);
   auto pair = dbs_[h % dbs_.size()];
-  pair.first->RunInLoopNoWait(cb, pair.second);
+  // pair.first->RunInLoopNoWait(cb, pair.second);
+  callback(nullptr, pair.second);
 }
 
 }  // namespace rockin
