@@ -13,7 +13,7 @@ class CmdArgs;
 struct MultiResult {
   std::atomic<uint32_t> cnt;
   std::atomic<int64_t> int_value;
-  std::vector<MemPtr> str_values;
+  std::vector<BufPtr> str_values;
 
   MultiResult(uint32_t cnt_) : cnt(cnt_), int_value(0), str_values(cnt_) {}
 };

@@ -33,6 +33,9 @@
   std::bind(&MemFun, std::placeholders::_1, std::placeholders::_2, \
             std::placeholders::_3)
 
+#define container_of(ptr, type, member) \
+  ((type *)((char *)(ptr)-offsetof(type, member)))
+
 namespace rockin {
 
 // get ctype error

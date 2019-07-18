@@ -1,31 +1,40 @@
 #pragma once
-#include <uv.h>
-#include <atomic>
-#include <iostream>
-#include <vector>
-#include "event_loop.h"
-#include "rockin_alloc.h"
-#include "siphash.h"
+#include "async.h"
+#include "mem_alloc.h"
 
 namespace rockin {
-class EventLoop;
-class MemDB;
+struct work_data;
 
-class MemSaver {
+class MemSaver : public Async {
  public:
-  MemSaver();
   static MemSaver *Default();
 
-  void Init(size_t thread_num);
+  MemSaver();
+  ~MemSaver();
 
-  void DoCmd(MemPtr key, EventLoop::LoopCallback cb);
+  bool Init(size_t thread_num);
 
-  const std::vector<std::pair<EventLoop *, std::shared_ptr<MemDB>>> &dbs() {
-    return dbs_;
-  }
+  // get obj from memsaver
+  void GetObj(uv_loop_t *loop, BufPtr key,
+              std::function<void(ObjPtr)> callback);
+
+  // get objs from memsaver
+  void GetObj(uv_loop_t *loop, BufPtrs keys,
+              std::function<void(ObjPtrs)> callback);
+
+  // insert obj to memsaver
+  void InsertObj(uv_loop_t *loop, ObjPtr obj,
+                 std::function<void(ObjPtr)> callback);
+
+  // insert obj to memsaver
+  void InsertObj(uv_loop_t *loop, ObjPtrs obj,
+                 std::function<void(ObjPtrs)> callback);
 
  private:
-  SipHash *hash_;
-  std::vector<std::pair<EventLoop *, std::shared_ptr<MemDB>>> dbs_;
+  void AsyncWork(int idx) override;
+  void PostWork(int idx, QUEUE *q) override;
+
+ private:
+  std::vector<work_data *> work_datas_;
 };
 }  // namespace rockin

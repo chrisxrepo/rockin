@@ -145,7 +145,7 @@ bool DiskDB::WriteBatch(const std::vector<DiskWrite> &writes) {
   return status.ok();
 }
 
-bool DiskDB::GetMeta(int db, MemPtr key, std::string *value) {
+bool DiskDB::GetMeta(int db, BufPtr key, std::string *value) {
   if (db < 0 || db >= mt_handles_.size()) {
     LOG(ERROR) << "GetMeta dbnum invalid:" << db
                << ", key:" << std::string(key->data, key->len);
@@ -168,7 +168,7 @@ bool DiskDB::GetMeta(int db, MemPtr key, std::string *value) {
   return true;
 }
 
-bool DiskDB::GetData(int db, MemPtr key, std::string *value) {
+bool DiskDB::GetData(int db, BufPtr key, std::string *value) {
   if (db < 0 || db >= db_handles_.size()) {
     LOG(ERROR) << "GetData dbnum invalid:" << db
                << ", key:" << std::string(key->data, key->len);
@@ -191,7 +191,7 @@ bool DiskDB::GetData(int db, MemPtr key, std::string *value) {
   return true;
 }
 
-std::vector<bool> DiskDB::GetDatas(int db, std::vector<MemPtr> &keys,
+std::vector<bool> DiskDB::GetDatas(int db, std::vector<BufPtr> &keys,
                                    std::vector<std::string> *values) {
   if (db < 0 || db >= db_handles_.size()) {
     LOG(ERROR) << "GetDatas dbnum invalid:" << db
@@ -226,7 +226,7 @@ std::vector<bool> DiskDB::GetDatas(int db, std::vector<MemPtr> &keys,
   return results;
 }
 
-bool DiskDB::SetMeta(int db, MemPtr key, MemPtr value) {
+bool DiskDB::SetMeta(int db, BufPtr key, BufPtr value) {
   return SetMetasDatas(db, KVPairS{std::make_pair(key, value)}, KVPairS());
 }
 
@@ -234,7 +234,7 @@ bool DiskDB::SetMetas(int db, const KVPairS &metas) {
   return SetMetasDatas(db, metas, KVPairS());
 }
 
-bool DiskDB::SetData(int db, MemPtr key, MemPtr value) {
+bool DiskDB::SetData(int db, BufPtr key, BufPtr value) {
   return SetMetasDatas(db, KVPairS(), KVPairS{std::make_pair(key, value)});
 }
 
@@ -242,13 +242,13 @@ bool DiskDB::SetDatas(int db, const KVPairS &kvs) {
   return SetMetasDatas(db, KVPairS(), kvs);
 }
 
-bool DiskDB::SetMetaData(int db, MemPtr mkey, MemPtr mvlaue, MemPtr dkey,
-                         MemPtr dvalue) {
+bool DiskDB::SetMetaData(int db, BufPtr mkey, BufPtr mvlaue, BufPtr dkey,
+                         BufPtr dvalue) {
   return SetMetasDatas(db, KVPairS{std::make_pair(mkey, mvlaue)},
                        KVPairS{std::make_pair(dkey, dvalue)});
 }
 
-bool DiskDB::SetMetaDatas(int db, MemPtr mkey, MemPtr mvlaue,
+bool DiskDB::SetMetaDatas(int db, BufPtr mkey, BufPtr mvlaue,
                           const KVPairS &kvs) {
   return SetMetasDatas(db, KVPairS{std::make_pair(mkey, mvlaue)}, kvs);
 }

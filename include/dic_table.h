@@ -3,7 +3,7 @@
 #include <string.h>
 #include <functional>
 #include <iostream>
-#include "rockin_alloc.h"
+#include "mem_alloc.h"
 #include "siphash.h"
 #include "utils.h"
 

@@ -1,70 +1,119 @@
 #include "mem_saver.h"
 #include <glog/logging.h>
-#include <uv.h>
+#include <stdlib.h>
 #include <mutex>
-#include <random>
-#include <thread>
-#include "mem_db.h"
 #include "utils.h"
 
 namespace rockin {
-
 namespace {
-std::once_flag mem_saver_once_flag;
-MemSaver *g_mem_saver;
+std::once_flag once_flag;
+MemSaver *g_data;
 };  // namespace
 
+struct work_data {
+  uv_cond_t cond;
+  uv_mutex_t mutex;
+  QUEUE queue;
+};
+
 MemSaver *MemSaver::Default() {
-  std::call_once(mem_saver_once_flag, []() { g_mem_saver = new MemSaver(); });
-  return g_mem_saver;
+  std::call_once(once_flag, []() { g_data = new MemSaver(); });
+  return g_data;
 }
 
-MemSaver::MemSaver() {
-  unsigned char seed[16];
-  RandomBytes(seed, 16);
-  hash_ = new SipHash(seed);
+MemSaver::MemSaver() {}
+
+MemSaver::~MemSaver() {}
+
+bool MemSaver::Init(size_t thread_num) {
+  for (size_t i = 0; i < thread_num; i++) {
+    work_data *data = new work_data();
+    int retcode = uv_mutex_init(&data->mutex);
+    LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
+
+    retcode = uv_cond_init(&data->cond);
+    LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
+
+    QUEUE_INIT(&data->queue);
+    work_datas_.push_back(data);
+  }
+
+  return this->InitAsync(thread_num);
 }
 
-void MemSaver::Init(size_t thread_num) {
-  for (int i = 0; i < thread_num; i++) {
-    auto db = std::make_shared<MemDB>();
-    EventLoop *et = new EventLoop();
-    dbs_.push_back(std::make_pair(et, db));
+void MemSaver::AsyncWork(int idx) {
+  work_data *data = work_datas_[idx];
 
-    uv_timer_t *reshah_timer = (uv_timer_t *)malloc(sizeof(uv_timer_t));
-    uv_timer_init(et->loop(), reshah_timer);
-    reshah_timer->data = malloc(sizeof(i));
-    *((int *)reshah_timer->data) = i;
-    uv_timer_start(reshah_timer,
-                   [](uv_timer_t *t) {
-                     auto db =
-                         MemSaver::Default()->dbs_[*((int *)t->data)].second;
-                     db->RehashTimer(GetMilliSec());
-                   },
-                   10, 100);
+  while (true) {
+    uv_mutex_lock(&data->mutex);
+    while (QUEUE_EMPTY(&data->queue)) {
+      uv_cond_wait(&data->cond, &data->mutex);
+    }
 
-    uv_timer_t *expire_timer = (uv_timer_t *)malloc(sizeof(uv_timer_t));
-    uv_timer_init(et->loop(), expire_timer);
-    expire_timer->data = malloc(sizeof(i));
-    *((int *)expire_timer->data) = i;
-    uv_timer_start(expire_timer,
-                   [](uv_timer_t *t) {
-                     auto db =
-                         MemSaver::Default()->dbs_[*((int *)t->data)].second;
-                     db->ExpireTimer(GetMilliSec());
-                   },
-                   50, 100);
+    QUEUE *q = QUEUE_HEAD(&data->queue);
+    QUEUE_REMOVE(q);
+    uv_mutex_unlock(&data->mutex);
 
-    et->Start();
+    uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
+    w->work(w);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    // async done
+    uv_mutex_lock(&w->loop->wq_mutex);
+    w->work = NULL;
+    QUEUE_INSERT_TAIL(&w->loop->wq, &w->wq);
+    uv_async_send(&w->loop->wq_async);
+    uv_mutex_unlock(&w->loop->wq_mutex);
   }
 }
 
-void MemSaver::DoCmd(MemPtr key, EventLoop::LoopCallback cb) {
-  uint64_t h = hash_->Hash((const uint8_t *)key->data, key->len);
-  auto pair = dbs_[h % dbs_.size()];
-  pair.first->RunInLoopNoWait(cb, pair.second);
+void MemSaver::PostWork(int idx, QUEUE *q) {
+  work_data *data = work_datas_[idx];
+  uv_mutex_lock(&data->mutex);
+  QUEUE_INSERT_TAIL(&data->queue, q);
+  uv_cond_signal(&data->cond);
+  uv_mutex_unlock(&data->mutex);
+}
+
+struct get_obj_helper_data {
+  BufPtr key;
+  BufPtr value;
+  std::function<void(ObjPtr)> callback;
+};
+
+// get obj from memsaver
+void MemSaver::GetObj(uv_loop_t *loop, BufPtr key,
+                      std::function<void(ObjPtr)> callback) {
+  get_obj_helper_data *help_data = new get_obj_helper_data();
+  help_data->key = key;
+  help_data->callback = callback;
+
+  uv_work_t *req = (uv_work_t *)malloc(sizeof(uv_work_t));
+  req->data = help_data;
+
+  this->AsyncQueueWork(
+      std::rand() % work_datas_.size(), loop, req,
+      [](uv_work_t *req) { LOG(INFO) << "work doing:" << uv_thread_self(); },
+      [](uv_work_t *req, int status) {
+        LOG(INFO) << "work done:" << uv_thread_self();
+      });
+}
+
+// get objs from memsaver
+void MemSaver::GetObj(uv_loop_t *loop, BufPtrs keys,
+                      std::function<void(ObjPtrs)> callback) {
+  //
+}
+
+// insert obj to memsaver
+void MemSaver::InsertObj(uv_loop_t *loop, ObjPtr obj,
+                         std::function<void(ObjPtr)> callback) {
+  //
+}
+
+// insert obj to memsaver
+void MemSaver::InsertObj(uv_loop_t *loop, ObjPtrs obj,
+                         std::function<void(ObjPtrs)> callback) {
+  //
 }
 
 }  // namespace rockin

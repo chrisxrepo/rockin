@@ -7,12 +7,12 @@
 namespace rockin {
 static SipHash *g_db_hash = nullptr;
 
-static uint64_t obj_key_hash(std::shared_ptr<MemObj> obj) {
+static uint64_t obj_key_hash(std::shared_ptr<object_t> obj) {
   return g_db_hash->Hash((const uint8_t *)obj->key->data, obj->key->len);
 }
 
-static bool obj_key_equal(std::shared_ptr<MemObj> a,
-                          std::shared_ptr<MemObj> b) {
+static bool obj_key_equal(std::shared_ptr<object_t> a,
+                          std::shared_ptr<object_t> b) {
   if ((a == nullptr || a->key == nullptr) &&
       (b == nullptr || b->key == nullptr))
     return true;
@@ -29,8 +29,8 @@ static bool obj_key_equal(std::shared_ptr<MemObj> a,
   return true;
 }
 
-static int obj_key_compare(std::shared_ptr<MemObj> a,
-                           std::shared_ptr<MemObj> b) {
+static int obj_key_compare(std::shared_ptr<object_t> a,
+                           std::shared_ptr<object_t> b) {
   if ((a == nullptr || a->key == nullptr) &&
       (b == nullptr || b->key == nullptr))
     return 0;
@@ -54,10 +54,10 @@ MemDB::MemDB() {
 
   for (int i = 0; i < DBNum; i++) {
     dics_.push_back(
-        std::make_shared<DicTable<MemObj>>(obj_key_equal, obj_key_hash));
+        std::make_shared<DicTable<object_t>>(obj_key_equal, obj_key_hash));
 
-    auto expire = std::make_shared<SkipList<MemObj, EXPIRE_SKIPLIST_LEVEL>>(
-        [](std::shared_ptr<MemObj> a, std::shared_ptr<MemObj> b) {
+    auto expire = std::make_shared<SkipList<object_t, EXPIRE_SKIPLIST_LEVEL>>(
+        [](std::shared_ptr<object_t> a, std::shared_ptr<object_t> b) {
           if (a == nullptr && b == nullptr) return 0;
           if (a == nullptr) return -1;
           if (b == nullptr) return 1;
@@ -65,7 +65,7 @@ MemDB::MemDB() {
           if (a->expire < b->expire) return -1;
           return obj_key_compare(a, b);
         },
-        [](std::shared_ptr<MemObj> a, std::shared_ptr<MemObj> b) {
+        [](std::shared_ptr<object_t> a, std::shared_ptr<object_t> b) {
           if (a == nullptr && b == nullptr) return true;
           if (a == nullptr || b == nullptr) return false;
           if (a->expire != b->expire) return false;
@@ -78,10 +78,10 @@ MemDB::MemDB() {
 
 MemDB::~MemDB() {}
 
-DicTable<MemObj>::Node *MemDB::GetNode(int dbindex, MemPtr key) {
+DicTable<object_t>::Node *MemDB::GetNode(int dbindex, BufPtr key) {
   int idx = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
-  auto tmpkey = std::make_shared<MemObj>(key);
-  DicTable<MemObj>::Node *node = dics_[idx]->Get(tmpkey);
+  auto tmpkey = std::make_shared<object_t>(key);
+  DicTable<object_t>::Node *node = dics_[idx]->Get(tmpkey);
   if (node != nullptr && node->data != nullptr && node->data->expire > 0 &&
       node->data->expire < GetMilliSec()) {
     expires_[idx]->Delete(node->data);
@@ -91,22 +91,22 @@ DicTable<MemObj>::Node *MemDB::GetNode(int dbindex, MemPtr key) {
   return node;
 }
 
-std::shared_ptr<MemObj> MemDB::Get(int dbindex, MemPtr key) {
-  DicTable<MemObj>::Node *node = GetNode(dbindex, key);
+std::shared_ptr<object_t> MemDB::Get(int dbindex, BufPtr key) {
+  DicTable<object_t>::Node *node = GetNode(dbindex, key);
   if (node == nullptr) return nullptr;
   return node->data;
 }
 
-void MemDB::Insert(int dbindex, std::shared_ptr<MemObj> obj) {
+void MemDB::Insert(int dbindex, std::shared_ptr<object_t> obj) {
   int idx = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
-  DicTable<MemObj>::Node *node = new DicTable<MemObj>::Node;
+  DicTable<object_t>::Node *node = new DicTable<object_t>::Node;
   node->data = obj;
   node->next = nullptr;
   dics_[idx]->Insert(node);
   if (obj->expire > 0) expires_[idx]->Insert(obj);
 }
 
-void MemDB::UpdateExpire(int dbindex, std::shared_ptr<MemObj> obj,
+void MemDB::UpdateExpire(int dbindex, std::shared_ptr<object_t> obj,
                          uint64_t expire_ms) {
   if (obj == nullptr || obj->key == nullptr || obj->expire == expire_ms) return;
   int idx = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
@@ -115,7 +115,7 @@ void MemDB::UpdateExpire(int dbindex, std::shared_ptr<MemObj> obj,
   if (expire_ms > 0) expires_[idx]->Insert(obj);
 
   /*  std::cout << "Expire List:";
-   expire_list_->Range([](std::shared_ptr<MemObj> obj) {
+   expire_list_->Range([](std::shared_ptr<object_t> obj) {
      std::cout << std::string(obj->key->data, obj->key->len) << ":"
                << obj->expire << " ";
      return true;
@@ -125,12 +125,12 @@ void MemDB::UpdateExpire(int dbindex, std::shared_ptr<MemObj> obj,
 }
 
 // delete by key
-bool MemDB::Delete(int dbindex, MemPtr key) {
+bool MemDB::Delete(int dbindex, BufPtr key) {
   int idx = (dbindex > 0 && dbindex < DBNum) ? dbindex : 0;
   auto obj = Get(dbindex, key);
   if (obj == nullptr) return false;
   if (obj->expire > 0) expires_[idx]->Delete(obj);
-  return dics_[idx]->Delete(std::make_shared<MemObj>(key));
+  return dics_[idx]->Delete(std::make_shared<object_t>(key));
 }
 
 void MemDB::FlushDB(int dbindex) {
@@ -139,7 +139,7 @@ void MemDB::FlushDB(int dbindex) {
   }
 
   dics_[dbindex] =
-      std::make_shared<DicTable<MemObj>>(obj_key_equal, obj_key_hash);
+      std::make_shared<DicTable<object_t>>(obj_key_equal, obj_key_hash);
 }
 
 void MemDB::RehashTimer(uint64_t time) {
@@ -164,9 +164,9 @@ void MemDB::ExpireTimer(uint64_t time) {
     uint64_t cur_ms = GetMilliSec();
     for (int i = 0; i < expires_.size(); i++) {
       int expire_count = 0;
-      std::vector<std::shared_ptr<MemObj>> expire_objs;
+      std::vector<std::shared_ptr<object_t>> expire_objs;
       expires_[i]->Range([&is_expire, &expire_count, &expire_objs,
-                          cur_ms](std::shared_ptr<MemObj> obj) {
+                          cur_ms](std::shared_ptr<object_t> obj) {
         if (cur_ms >= obj->expire) {
           is_expire = true;
           expire_objs.push_back(obj);
@@ -186,15 +186,15 @@ void MemDB::ExpireTimer(uint64_t time) {
   } while (is_expire);
 }
 
-MemPtr GenString(MemPtr value, int encode) {
+BufPtr GenString(BufPtr value, int encode) {
   if (value != nullptr && encode == Encode_Int) {
-    return rockin::make_shared<membuf_t>(Int64ToString(BUF_INT64(value)));
+    return make_buffer(Int64ToString(BUF_INT64(value)));
   }
 
   return value;
 }
 
-bool GenInt64(MemPtr str, int encode, int64_t &v) {
+bool GenInt64(BufPtr str, int encode, int64_t &v) {
   if (encode == Encode_Int) {
     v = BUF_INT64(str);
     return true;
@@ -206,7 +206,7 @@ bool GenInt64(MemPtr str, int encode, int64_t &v) {
   return false;
 }
 
-bool CheckAndReply(std::shared_ptr<MemObj> obj,
+bool CheckAndReply(std::shared_ptr<object_t> obj,
                    std::shared_ptr<RockinConn> conn, int type) {
   if (obj == nullptr) {
     conn->ReplyNil();
@@ -220,7 +220,7 @@ bool CheckAndReply(std::shared_ptr<MemObj> obj,
     }
   }
 
-  static MemPtr g_reply_type_warn = rockin::make_shared<membuf_t>(
+  static BufPtr g_reply_type_warn = make_buffer(
       "WRONGTYPE Operation against a key holding the wrong kind of value");
 
   conn->ReplyError(g_reply_type_warn);

@@ -135,10 +135,10 @@ void RockinConn::Close() {
 
 class _WriteData {
  public:
-  const std::vector<MemPtr> datas;
+  const std::vector<BufPtr> datas;
   uv_buf_t *bufs;
 
-  _WriteData(const std::vector<MemPtr> &&d) : datas(d) {
+  _WriteData(const std::vector<BufPtr> &&d) : datas(d) {
     bufs = (uv_buf_t *)malloc(sizeof(uv_buf_t) * datas.size());
     for (int i = 0; i < datas.size(); ++i)
       *(bufs + i) = uv_buf_init(datas[i]->data, datas[i]->len);
@@ -147,7 +147,7 @@ class _WriteData {
   ~_WriteData() { free(bufs); }
 };
 
-bool RockinConn::WriteData(std::vector<MemPtr> &&datas) {
+bool RockinConn::WriteData(std::vector<BufPtr> &&datas) {
   if (t_ == nullptr) {
     return false;
   }
@@ -236,40 +236,39 @@ void RockinConn::OnRead(ssize_t nread, const uv_buf_t *buf) {
 //////////////////////////////////////////////////////
 
 void RockinConn::ReplyNil() {
-  static MemPtr g_nil = rockin::make_shared<membuf_t>("$-1\r\n");
-  std::vector<MemPtr> datas;
+  static BufPtr g_nil = make_buffer("$-1\r\n");
+  std::vector<BufPtr> datas;
   datas.push_back(g_nil);
   WriteData(std::move(datas));
 }
 
 void RockinConn::ReplyOk() {
-  static MemPtr g_reply_ok = rockin::make_shared<membuf_t>("+OK\r\n");
-  std::vector<MemPtr> datas;
+  static BufPtr g_reply_ok = make_buffer("+OK\r\n");
+  std::vector<BufPtr> datas;
   datas.push_back(g_reply_ok);
   WriteData(std::move(datas));
 }
 
 void RockinConn::ReplyIntegerError() {
-  static MemPtr g_integer_err = rockin::make_shared<membuf_t>(
-      "-ERR value is not an integer or out of range\r\n");
-  std::vector<MemPtr> datas;
+  static BufPtr g_integer_err =
+      make_buffer("-ERR value is not an integer or out of range\r\n");
+  std::vector<BufPtr> datas;
   datas.push_back(g_integer_err);
   WriteData(std::move(datas));
 }
 
 void RockinConn::ReplySyntaxError() {
-  static MemPtr g_syntax_err =
-      rockin::make_shared<membuf_t>("-ERR syntax error\r\n");
-  std::vector<MemPtr> datas;
+  static BufPtr g_syntax_err = make_buffer("-ERR syntax error\r\n");
+  std::vector<BufPtr> datas;
   datas.push_back(g_syntax_err);
   WriteData(std::move(datas));
 }
 
-void RockinConn::ReplyError(MemPtr err) {
-  static MemPtr g_begin_err = rockin::make_shared<membuf_t>("-");
-  static MemPtr g_proto_split = rockin::make_shared<membuf_t>("\r\n");
+void RockinConn::ReplyError(BufPtr err) {
+  static BufPtr g_begin_err = make_buffer("-");
+  static BufPtr g_proto_split = make_buffer("\r\n");
 
-  std::vector<MemPtr> datas;
+  std::vector<BufPtr> datas;
   datas.push_back(g_begin_err);
   datas.push_back(err);
   datas.push_back(g_proto_split);
@@ -277,29 +276,29 @@ void RockinConn::ReplyError(MemPtr err) {
 }
 
 void RockinConn::ReplyTypeError() {
-  static MemPtr g_reply_type_warn = rockin::make_shared<membuf_t>(
+  static BufPtr g_reply_type_warn = make_buffer(
       "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
 
-  std::vector<MemPtr> datas;
+  std::vector<BufPtr> datas;
   datas.push_back(g_reply_type_warn);
   WriteData(std::move(datas));
 }
 
-void RockinConn::ReplyErrorAndClose(MemPtr err) {
+void RockinConn::ReplyErrorAndClose(BufPtr err) {
   ReplyError(err);
   Close();
 }
 
-void RockinConn::ReplyString(MemPtr str) {
+void RockinConn::ReplyString(BufPtr str) {
   if (str == nullptr) {
     ReplyNil();
     return;
   }
 
-  static MemPtr g_begin_str = rockin::make_shared<membuf_t>("+");
-  static MemPtr g_proto_split = rockin::make_shared<membuf_t>("\r\n");
+  static BufPtr g_begin_str = make_buffer("+");
+  static BufPtr g_proto_split = make_buffer("\r\n");
 
-  std::vector<MemPtr> datas;
+  std::vector<BufPtr> datas;
   datas.push_back(g_begin_str);
   datas.push_back(str);
   datas.push_back(g_proto_split);
@@ -307,51 +306,50 @@ void RockinConn::ReplyString(MemPtr str) {
 }
 
 void RockinConn::ReplyInteger(int64_t num) {
-  static MemPtr g_begin_int = rockin::make_shared<membuf_t>(":");
-  static MemPtr g_proto_split = rockin::make_shared<membuf_t>("\r\n");
+  static BufPtr g_begin_int = make_buffer(":");
+  static BufPtr g_proto_split = make_buffer("\r\n");
 
-  std::vector<MemPtr> datas;
+  std::vector<BufPtr> datas;
   datas.push_back(g_begin_int);
-  datas.push_back(rockin::make_shared<membuf_t>(Int64ToString(num)));
+  datas.push_back(make_buffer(Int64ToString(num)));
   datas.push_back(g_proto_split);
   WriteData(std::move(datas));
 }
 
-void RockinConn::ReplyBulk(MemPtr str) {
+void RockinConn::ReplyBulk(BufPtr str) {
   if (str == nullptr) {
     ReplyNil();
     return;
   }
 
-  static MemPtr g_begin_bulk = rockin::make_shared<membuf_t>("$");
-  static MemPtr g_proto_split = rockin::make_shared<membuf_t>("\r\n");
+  static BufPtr g_begin_bulk = make_buffer("$");
+  static BufPtr g_proto_split = make_buffer("\r\n");
 
-  std::vector<MemPtr> datas;
+  std::vector<BufPtr> datas;
   datas.push_back(g_begin_bulk);
-  datas.push_back(rockin::make_shared<membuf_t>(Int64ToString(str->len)));
+  datas.push_back(make_buffer(Int64ToString(str->len)));
   datas.push_back(g_proto_split);
   datas.push_back(str);
   datas.push_back(g_proto_split);
   WriteData(std::move(datas));
 }
 
-void RockinConn::ReplyArray(std::vector<MemPtr> &values) {
-  static MemPtr g_begin_array = rockin::make_shared<membuf_t>("*");
-  static MemPtr g_begin_bulk = rockin::make_shared<membuf_t>("$");
-  static MemPtr g_proto_split = rockin::make_shared<membuf_t>("\r\n");
-  static MemPtr g_nil = rockin::make_shared<membuf_t>("$-1\r\n");
+void RockinConn::ReplyArray(std::vector<BufPtr> &values) {
+  static BufPtr g_begin_array = make_buffer("*");
+  static BufPtr g_begin_bulk = make_buffer("$");
+  static BufPtr g_proto_split = make_buffer("\r\n");
+  static BufPtr g_nil = make_buffer("$-1\r\n");
 
-  std::vector<MemPtr> datas;
+  std::vector<BufPtr> datas;
   datas.push_back(g_begin_array);
-  datas.push_back(rockin::make_shared<membuf_t>(Int64ToString(values.size())));
+  datas.push_back(make_buffer(Int64ToString(values.size())));
   datas.push_back(g_proto_split);
   for (size_t i = 0; i < values.size(); i++) {
     if (values[i] == nullptr) {
       datas.push_back(g_nil);
     } else {
       datas.push_back(g_begin_bulk);
-      datas.push_back(
-          rockin::make_shared<membuf_t>(Int64ToString(values[i]->len)));
+      datas.push_back(make_buffer(Int64ToString(values[i]->len)));
       datas.push_back(g_proto_split);
       datas.push_back(values[i]);
       datas.push_back(g_proto_split);
@@ -360,14 +358,14 @@ void RockinConn::ReplyArray(std::vector<MemPtr> &values) {
   WriteData(std::move(datas));
 }
 
-void RockinConn::ReplyObj(std::shared_ptr<MemObj> obj) {
+void RockinConn::ReplyObj(std::shared_ptr<object_t> obj) {
   if (obj == nullptr) {
     ReplyNil();
   } else if (obj->type == Type_String && obj->encode == Encode_Raw) {
-    auto str_value = std::static_pointer_cast<membuf_t>(obj->value);
+    auto str_value = std::static_pointer_cast<buffer_t>(obj->value);
     ReplyBulk(str_value);
   } else if (obj->type == Type_String && obj->encode == Encode_Int) {
-    auto str_value = std::static_pointer_cast<membuf_t>(obj->value);
+    auto str_value = std::static_pointer_cast<buffer_t>(obj->value);
     ReplyInteger(BUF_INT64(str_value));
   }
 }

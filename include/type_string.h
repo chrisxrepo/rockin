@@ -9,34 +9,36 @@
 namespace rockin {
 class RockinConn;
 class CmdArgs;
-class MemObj;
+class object_t;
 
 class StringCmd : public Cmd {
  public:
   StringCmd(CmdInfo info) : Cmd(info) {}
 
   // get meta from disk saver
-  std::shared_ptr<MemObj> GetMeta(int dbindex, MemPtr key, uint16_t &bulk,
-                                  uint32_t &version);
+  std::shared_ptr<object_t> GetMeta(int dbindex, BufPtr key, uint16_t &bulk,
+                                    uint32_t &version);
 
   // get obj from memsaver
   // if not exist then get obj from disksaver
-  std::shared_ptr<MemObj> GetObj(int dbindex, std::shared_ptr<MemDB> db,
-                                 MemPtr key, bool &type_err, uint32_t &version);
+  std::shared_ptr<object_t> GetObj(int dbindex, std::shared_ptr<MemDB> db,
+                                   BufPtr key, bool &type_err,
+                                   uint32_t &version);
 
   // add obj
-  std::shared_ptr<MemObj> AddObj(std::shared_ptr<MemDB> db, int dbindex,
-                                 MemPtr key, MemPtr value, int type, int encode,
-                                 uint32_t version, uint64_t expire_ms);
+  std::shared_ptr<object_t> AddObj(std::shared_ptr<MemDB> db, int dbindex,
+                                   BufPtr key, BufPtr value, int type,
+                                   int encode, uint32_t version,
+                                   uint64_t expire_ms);
 
-  std::shared_ptr<MemObj> UpdateObj(std::shared_ptr<MemDB> db, int dbindex,
-                                    std::shared_ptr<MemObj> obj, MemPtr value,
-                                    int type, int encode, uint64_t expire_ms,
-                                    int old_bulk);
+  std::shared_ptr<object_t> UpdateObj(std::shared_ptr<MemDB> db, int dbindex,
+                                      std::shared_ptr<object_t> obj,
+                                      BufPtr value, int type, int encode,
+                                      uint64_t expire_ms, int old_bulk);
 
  private:
   // udpate string
-  bool Update(int dbindex, std::shared_ptr<MemObj> obj, bool update_meta);
+  bool Update(int dbindex, std::shared_ptr<object_t> obj, bool update_meta);
 };
 
 // GET key
@@ -143,7 +145,7 @@ class SetBitCmd : public StringCmd,
           std::shared_ptr<RockinConn> conn) override;
 
  private:
-  MemPtr DoSetBit(MemPtr value, int64_t offset, int on, int &ret);
+  BufPtr DoSetBit(BufPtr value, int64_t offset, int on, int &ret);
 };
 
 // GETBIT key offset

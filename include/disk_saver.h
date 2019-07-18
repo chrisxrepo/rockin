@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 #include "disk_db.h"
-#include "rockin_alloc.h"
+#include "mem_alloc.h"
 #include "utils.h"
 
 namespace rockin {
@@ -22,7 +22,7 @@ class DiskSaver {
                      const std::string &path);
 
   // get diskdb
-  std::shared_ptr<DiskDB> GetDB(MemPtr key);
+  std::shared_ptr<DiskDB> GetDB(BufPtr key);
 
   void Compact();
 

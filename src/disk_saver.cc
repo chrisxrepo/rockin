@@ -13,7 +13,7 @@ DiskSaver *g_disk_saver;
 
 class _WriteData {
  public:
-  MemPtr key;
+  BufPtr key;
   std::vector<DiskWrite> writes;
   std::shared_ptr<void> retain;
 };
@@ -80,7 +80,7 @@ void DiskSaver::InitAndCreate(int partition_num, std::vector<int> partitions,
   }
 }
 
-std::shared_ptr<DiskDB> DiskSaver::GetDB(MemPtr key) {
+std::shared_ptr<DiskDB> DiskSaver::GetDB(BufPtr key) {
   if (partition_num_ == 1) return partitions_[0];
   int index = HashCode(key->data, key->len) % partition_num_;
   return partitions_[index];

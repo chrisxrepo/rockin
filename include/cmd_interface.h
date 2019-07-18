@@ -68,8 +68,8 @@ class Cmd {
 
   const CmdInfo &info() { return info_; }
 
-  std::shared_ptr<MemObj> GetMeta(int dbindex, MemPtr key, std::string &meta,
-                                  uint32_t &version) {
+  std::shared_ptr<object_t> GetMeta(int dbindex, BufPtr key, std::string &meta,
+                                    uint32_t &version) {
     version = 0;
     auto diskdb = DiskSaver::Default()->GetDB(key);
     bool exist = diskdb->GetMeta(dbindex, key, &meta);
@@ -81,7 +81,7 @@ class Cmd {
         return nullptr;
       }
 
-      auto obj = rockin::make_shared<MemObj>();
+      auto obj = make_object();
       obj->key = key;
       obj->type = type;
       obj->encode = META_VALUE_ENCODE(meta.c_str());

@@ -1,7 +1,7 @@
 #pragma once
 #include <rocksdb/db.h>
 #include <iostream>
-#include "rockin_alloc.h"
+#include "mem_alloc.h"
 
 namespace rockin {
 
@@ -15,10 +15,10 @@ enum {
 struct DiskWrite {
   int db;
   uint8_t type;
-  MemPtr key;
-  MemPtr value;
+  BufPtr key;
+  BufPtr value;
 
-  DiskWrite(int db_, uint8_t type_, MemPtr key_, MemPtr value_)
+  DiskWrite(int db_, uint8_t type_, BufPtr key_, BufPtr value_)
       : db(db_), type(type_), key(key_), value(value_) {}
 };
 
@@ -31,33 +31,33 @@ class DiskDB {
   bool WriteBatch(const std::vector<DiskWrite> &writes);
 
   // get meta
-  bool GetMeta(int db, MemPtr key, std::string *value);
+  bool GetMeta(int db, BufPtr key, std::string *value);
 
   // get data
-  bool GetData(int db, MemPtr key, std::string *value);
+  bool GetData(int db, BufPtr key, std::string *value);
 
   // get multidata
-  std::vector<bool> GetDatas(int db, std::vector<MemPtr> &keys,
+  std::vector<bool> GetDatas(int db, std::vector<BufPtr> &keys,
                              std::vector<std::string> *value);
 
   // set meta
-  bool SetMeta(int db, MemPtr key, MemPtr vlaue);
+  bool SetMeta(int db, BufPtr key, BufPtr vlaue);
 
   // set multimeta
   bool SetMetas(int db, const KVPairS &metas);
 
   // set data
-  bool SetData(int db, MemPtr key, MemPtr vlaue);
+  bool SetData(int db, BufPtr key, BufPtr vlaue);
 
   // set multidata
   bool SetDatas(int db, const KVPairS &kvs);
 
   // set meta and data
-  bool SetMetaData(int db, MemPtr mkey, MemPtr mvlaue, MemPtr dkey,
-                   MemPtr dvlaue);
+  bool SetMetaData(int db, BufPtr mkey, BufPtr mvlaue, BufPtr dkey,
+                   BufPtr dvlaue);
 
   // set meta and multidata
-  bool SetMetaDatas(int db, MemPtr mkey, MemPtr mvlaue, const KVPairS &kvs);
+  bool SetMetaDatas(int db, BufPtr mkey, BufPtr mvlaue, const KVPairS &kvs);
 
   // set multimeta and multidata
   bool SetMetasDatas(int db, const KVPairS &metas, const KVPairS &kvs);
