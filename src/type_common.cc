@@ -3,7 +3,6 @@
 #include <jemalloc/jemalloc.h>
 #include "cmd_args.h"
 #include "disk_saver.h"
-#include "mem_db.h"
 #include "mem_saver.h"
 #include "rockin_conn.h"
 
@@ -50,24 +49,24 @@ void DelCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
 
 void SelectCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
-  int64_t dbnum = 0;
-  auto &args = cmd_args->args();
-  static BufPtr g_reply_dbindex_invalid = make_buffer("ERR invalid DB index");
-  static BufPtr g_reply_dbindex_range =
-      make_buffer("ERR DB index is out of range");
+  /*  int64_t dbnum = 0;
+   auto &args = cmd_args->args();
+   static BufPtr g_reply_dbindex_invalid = make_buffer("ERR invalid DB index");
+   static BufPtr g_reply_dbindex_range =
+       make_buffer("ERR DB index is out of range");
 
-  if (StringToInt64(args[1]->data, args[1]->len, &dbnum) != 1) {
-    conn->ReplyError(g_reply_dbindex_invalid);
-    return;
-  }
+   if (StringToInt64(args[1]->data, args[1]->len, &dbnum) != 1) {
+     conn->ReplyError(g_reply_dbindex_invalid);
+     return;
+   }
 
-  if (dbnum < 0 || dbnum >= DBNum) {
-    conn->ReplyError(g_reply_dbindex_range);
-    return;
-  }
+   if (dbnum < 0 || dbnum >= DBNum) {
+     conn->ReplyError(g_reply_dbindex_range);
+     return;
+   }
 
-  conn->set_index(dbnum);
-  conn->ReplyOk();
+   conn->set_index(dbnum);
+   conn->ReplyOk();*/
 }
 
 void FlushDBCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
@@ -174,7 +173,7 @@ void PTTLCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
        });*/
 }
 
-static bool DoExpire(std::shared_ptr<Cmd> cmd, std::shared_ptr<MemDB> db,
+/* static bool DoExpire(std::shared_ptr<Cmd> cmd, std::shared_ptr<MemDB> db,
                      int dbindex, BufPtr key, uint64_t expire_ms) {
   std::string meta_str;
   uint32_t version;
@@ -190,7 +189,7 @@ static bool DoExpire(std::shared_ptr<Cmd> cmd, std::shared_ptr<MemDB> db,
   auto obj = db->Get(dbindex, key);
   if (obj != nullptr) db->UpdateExpire(dbindex, obj, expire_ms);
   return true;
-}
+}*/
 
 void ExpireCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {

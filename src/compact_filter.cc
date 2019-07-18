@@ -84,14 +84,14 @@ bool DataCompactFilter::Filter(int level, const rocksdb::Slice& key,
 
 DataCompactFilterFactory::DataCompactFilterFactory(
     const std::string& name, rocksdb::DB** db,
-    std::vector<rocksdb::ColumnFamilyHandle*>* mt_handls, int index)
-    : name_(name), db_(db), mt_handls_(mt_handls), index_(index) {}
+    rocksdb::ColumnFamilyHandle** mt_handle)
+    : name_(name), db_(db), mt_handle_(mt_handle) {}
 
 std::unique_ptr<rocksdb::CompactionFilter>
 DataCompactFilterFactory::CreateCompactionFilter(
     const rocksdb::CompactionFilter::Context& context) {
   return std::unique_ptr<rocksdb::CompactionFilter>(
-      new DataCompactFilter(name_, *db_, (*mt_handls_)[index_]));
+      new DataCompactFilter(name_, *db_, *mt_handle_));
 }
 
 }  // namespace rockin

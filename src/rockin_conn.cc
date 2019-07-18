@@ -3,7 +3,6 @@
 #include "cmd_args.h"
 #include "cmd_table.h"
 #include "event_loop.h"
-#include "mem_db.h"
 
 namespace rockin {
 class _ConnData {
@@ -366,7 +365,7 @@ void RockinConn::ReplyObj(std::shared_ptr<object_t> obj) {
     ReplyBulk(str_value);
   } else if (obj->type == Type_String && obj->encode == Encode_Int) {
     auto str_value = std::static_pointer_cast<buffer_t>(obj->value);
-    ReplyInteger(BUF_INT64(str_value));
+    ReplyInteger(*((int64_t *)str_value->data));
   }
 }
 

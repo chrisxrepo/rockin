@@ -19,40 +19,33 @@ DiskDB::DiskDB(int partion_id, const std::string partition_name,
   std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
 
   // meta
-  for (int i = 0; i < DBNum; i++) {
-    rocksdb::BlockBasedTableOptions table_ops;
-    table_ops.block_size = 4096;  // 4k
-    table_ops.cache_index_and_filter_blocks = true;
-    table_ops.block_cache = g_meta_block_cache;
-    table_ops.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, true));
-
-    std::string cf_name = Format("mt_%05d", i);
-    std::string filter_name = partition_name_ + ":" + cf_name;
-    rocksdb::ColumnFamilyOptions cf_ops;
-    cf_ops.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_ops));
-    cf_ops.compaction_filter_factory =
-        std::make_shared<MetaCompactFilterFactory>(filter_name);
-    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, cf_ops));
-  }
+  rocksdb::ColumnFamilyOptions mt_cf_ops;
+  rocksdb::BlockBasedTableOptions mt_table_ops;
+  mt_table_ops.block_size = 4096;  // 4k
+  mt_table_ops.cache_index_and_filter_blocks = true;
+  mt_table_ops.block_cache = g_meta_block_cache;
+  mt_table_ops.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, true));
+  mt_cf_ops.table_factory.reset(
+      rocksdb::NewBlockBasedTableFactory(mt_table_ops));
+  mt_cf_ops.compaction_filter_factory =
+      std::make_shared<MetaCompactFilterFactory>(partition_name_ + ":mt");
+  column_families.push_back(rocksdb::ColumnFamilyDescriptor("mt", mt_cf_ops));
 
   // data
-  for (int i = 0; i < DBNum; i++) {
-    rocksdb::BlockBasedTableOptions table_ops;
-    table_ops.block_size = 4096;  // 4k
-    table_ops.cache_index_and_filter_blocks = true;
-    table_ops.block_cache = g_data_block_cache;
-    table_ops.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, true));
+  rocksdb::ColumnFamilyOptions db_cf_ops;
+  rocksdb::BlockBasedTableOptions db_table_ops;
+  db_table_ops.block_size = 4096;  // 4k
+  db_table_ops.cache_index_and_filter_blocks = true;
+  db_table_ops.block_cache = g_data_block_cache;
+  db_table_ops.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, true));
+  db_cf_ops.table_factory.reset(
+      rocksdb::NewBlockBasedTableFactory(db_table_ops));
+  db_cf_ops.compaction_filter_factory =
+      std::make_shared<DataCompactFilterFactory>(partition_name_ + ":data",
+                                                 &db_, &mt_handle_);
+  column_families.push_back(rocksdb::ColumnFamilyDescriptor("data", db_cf_ops));
 
-    std::string cf_name = Format("db_%05d", i);
-    std::string filter_name = partition_name_ + ":" + cf_name;
-    rocksdb::ColumnFamilyOptions cf_ops;
-    cf_ops.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_ops));
-    cf_ops.compaction_filter_factory =
-        std::make_shared<DataCompactFilterFactory>(filter_name, &db_,
-                                                   &mt_handles_, i);
-    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, cf_ops));
-  }
-
+  // default
   column_families.push_back(rocksdb::ColumnFamilyDescriptor(
       rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions()));
 
@@ -75,84 +68,23 @@ DiskDB::DiskDB(int partion_id, const std::string partition_name,
   auto status = rocksdb::DB::Open(ops, path, column_families, &handles, &db_);
   LOG_IF(FATAL, !status.ok())
       << "rocksdb::DB::Open status:" << status.getState();
-  LOG_IF(FATAL, column_families.size() != DBNum * 2 + 1)
+  LOG_IF(FATAL, column_families.size() != 3)
       << "column family size:" << column_families.size();
 
-  for (int i = 0; i < DBNum * 2; i++) {
-    if (i < DBNum)
-      mt_handles_.push_back(handles[i]);
-    else
-      db_handles_.push_back(handles[i]);
-  }
+  mt_handle_ = handles[0];
+  db_handle_ = handles[1];
 
-  LOG(INFO) << "open rocksdb:" << partition_name_
-            << ", data size:" << GetSizeString(GetDirectorySize(path))
-            << ", column family size:" << column_families.size();
+  LOG(INFO) << "open rocksdb:" << partition_name_;
 }
 
 DiskDB::~DiskDB() {
   if (db_) {
-    for (int i = 0; i < DBNum; i++) {
-      db_->DestroyColumnFamilyHandle(mt_handles_[i]);
-      db_->DestroyColumnFamilyHandle(db_handles_[i]);
-    }
-
     delete db_;
   }
 }
 
-bool DiskDB::WriteBatch(const std::vector<DiskWrite> &writes) {
-  if (writes.size() == 0) {
-    return true;
-  }
-
-  rocksdb::WriteBatch batch;
-  for (auto iter = writes.begin(); iter != writes.end(); ++iter) {
-    if (iter->db < 0 || iter->db >= mt_handles_.size()) {
-      LOG(ERROR) << "dbnum invalid:" << iter->db
-                 << ", key:" << std::string(iter->key->data, iter->key->len)
-                 << ", value:"
-                 << (iter->value == nullptr
-                         ? ""
-                         : std::string(iter->value->data, iter->value->len));
-      continue;
-    }
-
-    if (iter->type == Write_Meta) {
-      batch.Put(mt_handles_[iter->db],
-                rocksdb::Slice(iter->key->data, iter->key->len),
-                rocksdb::Slice(iter->value->data, iter->value->len));
-    } else if (iter->type == Write_Data) {
-      batch.Put(db_handles_[iter->db],
-                rocksdb::Slice(iter->key->data, iter->key->len),
-                rocksdb::Slice(iter->value->data, iter->value->len));
-    } else if (iter->type == Del_Meta) {
-      batch.Delete(mt_handles_[iter->db],
-                   rocksdb::Slice(iter->key->data, iter->key->len));
-    } else if (iter->type == Del_Data) {
-      batch.Delete(db_handles_[iter->db],
-                   rocksdb::Slice(iter->key->data, iter->key->len));
-    } else {
-      LOG(WARNING) << "WriteBatch unknow type:" << iter->type;
-    }
-  }
-
-  auto status = db_->Write(write_options_, &batch);
-  if (!status.ok()) {
-    LOG(ERROR) << "rocksdb Write:" << status.ToString();
-  }
-
-  return status.ok();
-}
-
-bool DiskDB::GetMeta(int db, BufPtr key, std::string *value) {
-  if (db < 0 || db >= mt_handles_.size()) {
-    LOG(ERROR) << "GetMeta dbnum invalid:" << db
-               << ", key:" << std::string(key->data, key->len);
-    return false;
-  }
-
-  auto status = db_->Get(read_options_, mt_handles_[db],
+bool DiskDB::GetMeta(BufPtr key, std::string *value) {
+  auto status = db_->Get(read_options_, mt_handle_,
                          rocksdb::Slice(key->data, key->len), value);
 
   if (status.IsNotFound()) {
@@ -168,14 +100,8 @@ bool DiskDB::GetMeta(int db, BufPtr key, std::string *value) {
   return true;
 }
 
-bool DiskDB::GetData(int db, BufPtr key, std::string *value) {
-  if (db < 0 || db >= db_handles_.size()) {
-    LOG(ERROR) << "GetData dbnum invalid:" << db
-               << ", key:" << std::string(key->data, key->len);
-    return false;
-  }
-
-  auto status = db_->Get(read_options_, db_handles_[db],
+bool DiskDB::GetData(BufPtr key, std::string *value) {
+  auto status = db_->Get(read_options_, db_handle_,
                          rocksdb::Slice(key->data, key->len), value);
 
   if (status.IsNotFound()) {
@@ -191,18 +117,12 @@ bool DiskDB::GetData(int db, BufPtr key, std::string *value) {
   return true;
 }
 
-std::vector<bool> DiskDB::GetDatas(int db, std::vector<BufPtr> &keys,
+std::vector<bool> DiskDB::GetDatas(std::vector<BufPtr> &keys,
                                    std::vector<std::string> *values) {
-  if (db < 0 || db >= db_handles_.size()) {
-    LOG(ERROR) << "GetDatas dbnum invalid:" << db
-               << ", keys num:" << keys.size();
-    return std::vector<bool>(keys.size());
-  }
-
   std::vector<rocksdb::Slice> slices;
   std::vector<rocksdb::ColumnFamilyHandle *> cfs;
   for (size_t i = 0; i < keys.size(); i++) {
-    cfs.push_back(db_handles_[db]);
+    cfs.push_back(db_handle_);
     slices.push_back(rocksdb::Slice(keys[i]->data, keys[i]->len));
   }
 
@@ -226,43 +146,37 @@ std::vector<bool> DiskDB::GetDatas(int db, std::vector<BufPtr> &keys,
   return results;
 }
 
-bool DiskDB::SetMeta(int db, BufPtr key, BufPtr value) {
-  return SetMetasDatas(db, KVPairS{std::make_pair(key, value)}, KVPairS());
+bool DiskDB::SetMeta(BufPtr key, BufPtr value) {
+  return SetMetasDatas(KVPairS{std::make_pair(key, value)}, KVPairS());
 }
 
-bool DiskDB::SetMetas(int db, const KVPairS &metas) {
-  return SetMetasDatas(db, metas, KVPairS());
+bool DiskDB::SetMetas(const KVPairS &metas) {
+  return SetMetasDatas(metas, KVPairS());
 }
 
-bool DiskDB::SetData(int db, BufPtr key, BufPtr value) {
-  return SetMetasDatas(db, KVPairS(), KVPairS{std::make_pair(key, value)});
+bool DiskDB::SetData(BufPtr key, BufPtr value) {
+  return SetMetasDatas(KVPairS(), KVPairS{std::make_pair(key, value)});
 }
 
-bool DiskDB::SetDatas(int db, const KVPairS &kvs) {
-  return SetMetasDatas(db, KVPairS(), kvs);
+bool DiskDB::SetDatas(const KVPairS &kvs) {
+  return SetMetasDatas(KVPairS(), kvs);
 }
 
-bool DiskDB::SetMetaData(int db, BufPtr mkey, BufPtr mvlaue, BufPtr dkey,
+bool DiskDB::SetMetaData(BufPtr mkey, BufPtr mvlaue, BufPtr dkey,
                          BufPtr dvalue) {
-  return SetMetasDatas(db, KVPairS{std::make_pair(mkey, mvlaue)},
+  return SetMetasDatas(KVPairS{std::make_pair(mkey, mvlaue)},
                        KVPairS{std::make_pair(dkey, dvalue)});
 }
 
-bool DiskDB::SetMetaDatas(int db, BufPtr mkey, BufPtr mvlaue,
-                          const KVPairS &kvs) {
-  return SetMetasDatas(db, KVPairS{std::make_pair(mkey, mvlaue)}, kvs);
+bool DiskDB::SetMetaDatas(BufPtr mkey, BufPtr mvlaue, const KVPairS &kvs) {
+  return SetMetasDatas(KVPairS{std::make_pair(mkey, mvlaue)}, kvs);
 }
 
-bool DiskDB::SetMetasDatas(int db, const KVPairS &metas, const KVPairS &kvs) {
-  if (db < 0 || db >= DBNum) {
-    LOG(ERROR) << "SetMetaDatas dbnum invalid:" << db;
-    return false;
-  }
-
+bool DiskDB::SetMetasDatas(const KVPairS &metas, const KVPairS &kvs) {
   rocksdb::WriteBatch batch;
   for (auto iter = metas.begin(); iter != metas.end(); ++iter) {
     auto status = batch.Put(
-        mt_handles_[db], rocksdb::Slice(iter->first->data, iter->first->len),
+        mt_handle_, rocksdb::Slice(iter->first->data, iter->first->len),
         rocksdb::Slice(iter->second->data, iter->second->len));
     if (!status.ok()) {
       LOG(ERROR) << "SetMetaDatas WriteBatch.Put:" << status.ToString();
@@ -272,7 +186,7 @@ bool DiskDB::SetMetasDatas(int db, const KVPairS &metas, const KVPairS &kvs) {
 
   for (auto iter = kvs.begin(); iter != kvs.end(); ++iter) {
     auto status = batch.Put(
-        db_handles_[db], rocksdb::Slice(iter->first->data, iter->first->len),
+        db_handle_, rocksdb::Slice(iter->first->data, iter->first->len),
         rocksdb::Slice(iter->second->data, iter->second->len));
     if (!status.ok()) {
       LOG(ERROR) << "SetMetaDatas WriteBatch.Put:" << status.ToString();
@@ -291,24 +205,19 @@ bool DiskDB::SetMetasDatas(int db, const KVPairS &metas, const KVPairS &kvs) {
 
 void DiskDB::Compact() {
   LOG(INFO) << "Start to compct rocksdb:" << partition_name_;
-  for (size_t i = 0; i < mt_handles_.size(); i++) {
-    auto status = db_->CompactRange(rocksdb::CompactRangeOptions(),
-                                    mt_handles_[i], nullptr, nullptr);
 
-    if (!status.ok()) {
-      LOG(ERROR) << "Compact partition:" << partition_name_
-                 << ", metadata:" << i << ", error:" << status.ToString();
-    }
+  auto status = db_->CompactRange(rocksdb::CompactRangeOptions(), mt_handle_,
+                                  nullptr, nullptr);
+  if (!status.ok()) {
+    LOG(ERROR) << "Compact partition:" << partition_name_
+               << ", metadata error:" << status.ToString();
   }
 
-  for (size_t i = 0; i < db_handles_.size(); i++) {
-    auto status = db_->CompactRange(rocksdb::CompactRangeOptions(),
-                                    db_handles_[i], nullptr, nullptr);
-
-    if (!status.ok()) {
-      LOG(ERROR) << "Compact partition:" << partition_name_ << ", dbdata:" << i
-                 << ", error:" << status.ToString();
-    }
+  status = db_->CompactRange(rocksdb::CompactRangeOptions(), db_handle_,
+                             nullptr, nullptr);
+  if (!status.ok()) {
+    LOG(ERROR) << "Compact partition:" << partition_name_
+               << ", dbdata error:" << status.ToString();
   }
 }
 

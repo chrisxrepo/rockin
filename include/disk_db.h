@@ -28,39 +28,36 @@ class DiskDB {
          const std::string &path);
   ~DiskDB();
 
-  bool WriteBatch(const std::vector<DiskWrite> &writes);
-
   // get meta
-  bool GetMeta(int db, BufPtr key, std::string *value);
+  bool GetMeta(BufPtr key, std::string *value);
 
   // get data
-  bool GetData(int db, BufPtr key, std::string *value);
+  bool GetData(BufPtr key, std::string *value);
 
   // get multidata
-  std::vector<bool> GetDatas(int db, std::vector<BufPtr> &keys,
+  std::vector<bool> GetDatas(std::vector<BufPtr> &keys,
                              std::vector<std::string> *value);
 
   // set meta
-  bool SetMeta(int db, BufPtr key, BufPtr vlaue);
+  bool SetMeta(BufPtr key, BufPtr vlaue);
 
   // set multimeta
-  bool SetMetas(int db, const KVPairS &metas);
+  bool SetMetas(const KVPairS &metas);
 
   // set data
-  bool SetData(int db, BufPtr key, BufPtr vlaue);
+  bool SetData(BufPtr key, BufPtr vlaue);
 
   // set multidata
-  bool SetDatas(int db, const KVPairS &kvs);
+  bool SetDatas(const KVPairS &kvs);
 
   // set meta and data
-  bool SetMetaData(int db, BufPtr mkey, BufPtr mvlaue, BufPtr dkey,
-                   BufPtr dvlaue);
+  bool SetMetaData(BufPtr mkey, BufPtr mvlaue, BufPtr dkey, BufPtr dvlaue);
 
   // set meta and multidata
-  bool SetMetaDatas(int db, BufPtr mkey, BufPtr mvlaue, const KVPairS &kvs);
+  bool SetMetaDatas(BufPtr mkey, BufPtr mvlaue, const KVPairS &kvs);
 
   // set multimeta and multidata
-  bool SetMetasDatas(int db, const KVPairS &metas, const KVPairS &kvs);
+  bool SetMetasDatas(const KVPairS &metas, const KVPairS &kvs);
 
   // compact rocksdb
   void Compact();
@@ -72,8 +69,8 @@ class DiskDB {
   rocksdb::DB *db_;
   rocksdb::ReadOptions read_options_;
   rocksdb::WriteOptions write_options_;
-  std::vector<rocksdb::ColumnFamilyHandle *> mt_handles_;
-  std::vector<rocksdb::ColumnFamilyHandle *> db_handles_;
+  rocksdb::ColumnFamilyHandle *mt_handle_;
+  rocksdb::ColumnFamilyHandle *db_handle_;
 
   static std::shared_ptr<rocksdb::Cache> g_meta_block_cache;
   static std::shared_ptr<rocksdb::Cache> g_data_block_cache;

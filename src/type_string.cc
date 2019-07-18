@@ -3,12 +3,35 @@
 #include <math.h>
 #include "cmd_args.h"
 #include "coding.h"
-#include "mem_db.h"
+#include "mem_alloc.h"
 #include "mem_saver.h"
 #include "rockin_conn.h"
 #include "type_common.h"
 
+#define OBJ_STRING(obj) std::static_pointer_cast<buffer_t>(obj->value)
+#define BUF_INT64(v) (*((int64_t *)v->data))
+
 namespace rockin {
+
+BufPtr GenString(BufPtr value, int encode) {
+  if (value != nullptr && encode == Encode_Int) {
+    return make_buffer(Int64ToString(BUF_INT64(value)));
+  }
+
+  return value;
+}
+
+bool GenInt64(BufPtr str, int encode, int64_t &v) {
+  if (encode == Encode_Int) {
+    v = BUF_INT64(str);
+    return true;
+  } else {
+    if (StringToInt64(str->data, str->len, &v)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 #define STRING_MAX_BULK_SIZE 1024
 
@@ -21,6 +44,7 @@ namespace rockin {
 #define CHECK_STRING_META(o, t, e, ex, ob, nb) \
   (CHECK_META(o, t, e, ex) && (ob) == (nb))
 
+/*
 // meta key ->  key
 //
 // meta value-> |     meta value header     |   bulk   |
@@ -182,7 +206,7 @@ std::shared_ptr<object_t> StringCmd::UpdateObj(
   db->UpdateExpire(dbindex, obj, expire_ms);
   Update(dbindex, obj, update_meta);
   return obj;
-}
+}*/
 
 ///////////////////////////////////////////////////////////////////////////////
 void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
@@ -453,12 +477,12 @@ void MSetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
          });
    }*/
 }
-
+/*
 static void IncrDecrProcess(std::shared_ptr<StringCmd> cmd,
                             std::shared_ptr<CmdArgs> cmd_args,
                             std::shared_ptr<RockinConn> conn,
                             std::shared_ptr<MemDB> db, int num) {
-  /*  uint32_t version = 0;
+    uint32_t version = 0;
    bool type_err = false;
    auto &args = cmd_args->args();
    auto obj = cmd->GetObj(conn->index(), db, args[1], type_err, version);
@@ -490,9 +514,9 @@ static void IncrDecrProcess(std::shared_ptr<StringCmd> cmd,
      cmd->UpdateObj(db, conn->index(), obj, new_value, Type_String, Encode_Int,
                     obj->expire, 0);
    }
-   conn->ReplyObj(obj);*/
+   conn->ReplyObj(obj);
 }
-
+*/
 void IncrCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                  std::shared_ptr<RockinConn> conn) {
   /*  MemSaver::Default()->DoCmd(cmd_args->args()[1],

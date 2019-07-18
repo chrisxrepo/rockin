@@ -146,4 +146,11 @@ ObjPtr make_object(_Args &&... __args) {
   return ptr;
 }
 
+#define OBJ_SET_VALUE(o, v, t, e) \
+  do {                            \
+    (o)->type = (t);              \
+    (o)->encode = (e);            \
+    (o)->value = (v);             \
+  } while (0)
+
 }  // namespace rockin

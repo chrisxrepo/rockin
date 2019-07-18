@@ -31,7 +31,15 @@ void DiskSaver::DestoryDefault() {
   }
 }
 
-DiskSaver::DiskSaver() : partition_num_(0) {
+DiskSaver::DiskSaver() : partition_num_(0), thread_num_(0) {
+  int retcode = uv_mutex_init(&mutex_);
+  LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
+
+  retcode = uv_cond_init(&cond_);
+  LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
+
+  QUEUE_INIT(&queue_);
+
   rocksdb::Env *env = rocksdb::Env::Default();
   env->SetBackgroundThreads(2, rocksdb::Env::LOW);
   env->SetBackgroundThreads(1, rocksdb::Env::HIGH);
@@ -42,16 +50,10 @@ DiskSaver::~DiskSaver() {
   partitions_.clear();
 }
 
-void DiskSaver::InitNoCrteate(int partition_num, const std::string &path) {
+bool DiskSaver::Init(int thread_num, int partition_num,
+                     const std::string &path) {
   path_ = path;
-  partition_num_ = partition_num;
-  for (int i = 0; i < partition_num; i++) {
-    partitions_.push_back(nullptr);
-  }
-}
-
-void DiskSaver::InitAndCreate(int partition_num, const std::string &path) {
-  path_ = path;
+  thread_num_ = thread_num;
   partition_num_ = partition_num;
   for (int i = 0; i < partition_num; i++) {
     std::string name = Format("partition_%05d", i);
@@ -59,25 +61,38 @@ void DiskSaver::InitAndCreate(int partition_num, const std::string &path) {
     auto db = std::make_shared<DiskDB>(i, name, dbpath);
     partitions_.push_back(db);
   }
+
+  return this->InitAsync(thread_num);
 }
 
-void DiskSaver::InitAndCreate(int partition_num, std::vector<int> partitions,
-                              const std::string &path) {
-  path_ = path;
-  partition_num_ = partition_num;
-  for (int i = 0; i < partition_num; i++) {
-    partitions_.push_back(nullptr);
-  }
+void DiskSaver::AsyncWork(int idx) {
+  while (true) {
+    uv_mutex_lock(&mutex_);
+    while (QUEUE_EMPTY(&queue_)) {
+      uv_cond_wait(&cond_, &mutex_);
+    }
 
-  for (auto iter = partitions.begin(); iter != partitions.end(); ++iter) {
-    int partition_id = *iter;
-    if (partition_id >= partition_num) continue;
+    QUEUE *q = QUEUE_HEAD(&queue_);
+    QUEUE_REMOVE(q);
+    uv_mutex_unlock(&mutex_);
 
-    std::string name = Format("partition_%05d", partition_id);
-    std::string dbpath = path + "/" + name;
-    auto db = std::make_shared<DiskDB>(partition_id, name, dbpath);
-    partitions_[partition_id] = db;
+    uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
+    w->work(w);
+
+    // async done
+    uv_mutex_lock(&w->loop->wq_mutex);
+    w->work = NULL;
+    QUEUE_INSERT_TAIL(&w->loop->wq, &w->wq);
+    uv_async_send(&w->loop->wq_async);
+    uv_mutex_unlock(&w->loop->wq_mutex);
   }
+}
+
+void DiskSaver::PostWork(int idx, QUEUE *q) {
+  uv_mutex_lock(&mutex_);
+  QUEUE_INSERT_TAIL(&queue_, q);
+  uv_cond_signal(&cond_);
+  uv_mutex_unlock(&mutex_);
 }
 
 std::shared_ptr<DiskDB> DiskSaver::GetDB(BufPtr key) {

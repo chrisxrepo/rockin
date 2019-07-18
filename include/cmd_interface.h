@@ -2,7 +2,6 @@
 #include <iostream>
 #include "coding.h"
 #include "disk_saver.h"
-#include "mem_db.h"
 #include "utils.h"
 
 // meta value header
@@ -72,7 +71,7 @@ class Cmd {
                                     uint32_t &version) {
     version = 0;
     auto diskdb = DiskSaver::Default()->GetDB(key);
-    bool exist = diskdb->GetMeta(dbindex, key, &meta);
+    bool exist = diskdb->GetMeta(key, &meta);
     if (exist && meta.length() >= BASE_META_VALUE_SIZE) {
       version = META_VALUE_VERSION(meta.c_str());
       uint8_t type = META_VALUE_TYPE(meta.c_str());
