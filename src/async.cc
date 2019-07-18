@@ -1,4 +1,5 @@
 #include "async.h"
+#include <assert.h>
 #include <glog/logging.h>
 #include "utils.h"
 

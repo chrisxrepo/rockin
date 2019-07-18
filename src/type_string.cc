@@ -187,28 +187,37 @@ std::shared_ptr<object_t> StringCmd::UpdateObj(
 ///////////////////////////////////////////////////////////////////////////////
 void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {
-  /*  MemSaver::Default()->DoCmd(
-       cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
-                                EventLoop *lt, std::shared_ptr<void> arg) {
-         auto db = std::static_pointer_cast<MemDB>(arg);
-
-         uint32_t version = 0;
-         bool type_err = false;
-         auto &args = cmd_args->args();
-         auto obj = cmd->GetObj(conn->index(), db, args[1], type_err, version);
-         if (obj == nullptr) {
-           if (type_err)
-             conn->ReplyTypeError();
-           else
-             conn->ReplyNil();
-           return;
-         }
-         conn->ReplyBulk(GenString(OBJ_STRING(obj), obj->encode));
-       });*/
+  auto &args = cmd_args->args();
+  MemSaver::Default()->GetObj(conn->loop(), args[1], [conn](ObjPtr obj) {
+    if (obj == nullptr)
+      conn->ReplyNil();
+    else if (obj->type != Type_String)
+      conn->ReplyTypeError();
+    else
+      conn->ReplyBulk(GenString(OBJ_STRING(obj), obj->encode));
+  });
 }
 
 void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {
+  auto &args = cmd_args->args();
+  MemSaver::Default()->GetObj(
+      conn->loop(), args[1],
+      [conn, key = args[1], value = args[2]](ObjPtr obj) {
+        if (obj != nullptr) {
+          OBJ_SET_VALUE(obj, value, Type_String, Encode_Raw);
+          conn->ReplyOk();
+          return;
+        }
+
+        obj = make_object(key);
+        OBJ_SET_VALUE(obj, value, Type_String, Encode_Raw);
+        MemSaver::Default()->InsertObj(conn->loop(), obj, [conn](ObjPtr obj) {
+          //
+          conn->ReplyOk();
+        });
+      });
+
   /* MemSaver::Default()->DoCmd(
        cmd_args->args()[1], [cmd_args, conn, cmd = shared_from_this()](
                                 EventLoop *lt, std::shared_ptr<void> arg) {

@@ -1,5 +1,6 @@
 #include "siphash.h"
 #include <string.h>
+#include <mutex>
 
 #if defined(__X86_64__) || defined(__x86_64__) || defined(__i386__)
 #define UNALIGNED_LE_CPU
@@ -106,6 +107,16 @@ uint64_t SipHash::Hash(const uint8_t *in, int inlen) {
 #else
   return b;
 #endif
+}
+
+namespace {
+std::once_flag once_flag;
+SipHash *g_data;
+};  // namespace
+
+uint64_t Hash(const void *in, int inlen) {
+  std::call_once(once_flag, []() { g_data = new SipHash(); });
+  return g_data->Hash((const uint8_t *)in, inlen);
 }
 
 }  // namespace rockin

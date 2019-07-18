@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include "async.h"
 #include "mem_alloc.h"
 
@@ -35,6 +36,7 @@ class MemSaver : public Async {
   void PostWork(int idx, QUEUE *q) override;
 
  private:
+  size_t thread_num_;
   std::vector<work_data *> work_datas_;
 };
 }  // namespace rockin

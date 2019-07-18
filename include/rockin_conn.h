@@ -24,6 +24,7 @@ class RockinConn : public std::enable_shared_from_this<RockinConn> {
   bool WriteData(std::vector<BufPtr> &&datas);
 
   uv_tcp_t *handle() { return t_; }
+  uv_loop_t *loop() { return (t_ == nullptr ? nullptr : t_->loop); }
 
   int index() { return index_; }
   void set_index(int index) { index_ = index; }
