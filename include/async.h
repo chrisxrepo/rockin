@@ -10,10 +10,11 @@ class Async {
   virtual ~Async();
 
   bool InitAsync(size_t thread_num);
+  void WaitStop();
+
+ protected:
   int AsyncQueueWork(int idx, uv_loop_t *loop, uv_work_t *req,
                      uv_work_cb work_cb, uv_after_work_cb after_work_cb);
-
-  void WaitStop();
 
  private:
   virtual void AsyncWork(int idx) = 0;

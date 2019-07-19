@@ -433,7 +433,7 @@ void RandomBytes(unsigned char bytes[], size_t len) {
   }
 }
 
-uint32_t HashCode(const char *src, size_t len) {
+uint32_t SimpleHash(const char *src, size_t len) {
   uint32_t hash = 0;
   uint32_t send = 131;
   for (size_t i = 0; i < len; i++) {

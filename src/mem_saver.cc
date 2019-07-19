@@ -127,51 +127,50 @@ void MemSaver::PostWork(int idx, QUEUE *q) {
   uv_mutex_unlock(&data->mutex);
 }
 
-struct get_obj_helper {
+struct GetObjHelper {
   int idx;
   BufPtr key;
   ObjPtr obj;
-  std::function<void(ObjPtr)> callback;
+  std::function<void(BufPtr, ObjPtr)> callback;
 };
 
 // get obj from memsaver
 void MemSaver::GetObj(uv_loop_t *loop, BufPtr key,
-                      std::function<void(ObjPtr)> callback) {
-  if (thread_num_ == 0) return;
+                      std::function<void(BufPtr, ObjPtr)> callback) {
+  if (loop == nullptr || key == nullptr || thread_num_ == 0) return;
   int index = rockin::Hash(key->data, key->len) % thread_num_;
 
-  get_obj_helper *help_data = new get_obj_helper();
-  help_data->idx = index;
-  help_data->key = key;
-  help_data->callback = callback;
+  GetObjHelper *helper = new GetObjHelper();
+  helper->idx = index;
+  helper->key = key;
+  helper->callback = callback;
 
-  uv_work_t *work_req = (uv_work_t *)malloc(sizeof(uv_work_t));
-  work_req->data = help_data;
+  uv_work_t *req = (uv_work_t *)malloc(sizeof(uv_work_t));
+  req->data = helper;
 
   this->AsyncQueueWork(
-      index, loop, work_req,
-      [](uv_work_t *work_req) {
-        get_obj_helper *help_data = (get_obj_helper *)work_req->data;
-        work_data *data = MemSaver::Default()->work_datas_[help_data->idx];
-        DicTable<object_t>::Node *node =
-            data->db->Get(rockin::make_object(help_data->key));
-        if (node != nullptr) help_data->obj = node->data;
+      index, loop, req,
+      [](uv_work_t *req) {
+        GetObjHelper *helper = (GetObjHelper *)req->data;
+        work_data *data = MemSaver::Default()->work_datas_[helper->idx];
+        auto *node = data->db->Get(rockin::make_object(helper->key));
+        if (node != nullptr) helper->obj = node->data;
       },
-      [](uv_work_t *work_req, int status) {
-        get_obj_helper *help_data = (get_obj_helper *)work_req->data;
-        help_data->callback(help_data->obj);
-        delete help_data;
-        free(work_req);
+      [](uv_work_t *req, int status) {
+        GetObjHelper *helper = (GetObjHelper *)req->data;
+        helper->callback(helper->key, helper->obj);
+        delete helper;
+        free(req);
       });
 }
 
 // get objs from memsaver
 void MemSaver::GetObj(uv_loop_t *loop, BufPtrs keys,
-                      std::function<void(ObjPtrs)> callback) {
+                      std::function<void(BufPtrs, ObjPtrs)> callback) {
   //
 }
 
-struct insert_obj_helper {
+struct InsertObjHelper {
   int idx;
   ObjPtr obj;
   std::function<void(ObjPtr)> callback;
@@ -182,30 +181,30 @@ void MemSaver::InsertObj(uv_loop_t *loop, ObjPtr obj,
   if (thread_num_ == 0) return;
   int index = rockin::Hash(obj->key->data, obj->key->len) % thread_num_;
 
-  insert_obj_helper *help_data = new insert_obj_helper();
-  help_data->idx = index;
-  help_data->obj = obj;
-  help_data->callback = callback;
+  InsertObjHelper *helper = new InsertObjHelper();
+  helper->idx = index;
+  helper->obj = obj;
+  helper->callback = callback;
 
-  uv_work_t *work_req = (uv_work_t *)malloc(sizeof(uv_work_t));
-  work_req->data = help_data;
+  uv_work_t *req = (uv_work_t *)malloc(sizeof(uv_work_t));
+  req->data = helper;
 
   this->AsyncQueueWork(
-      index, loop, work_req,
-      [](uv_work_t *work_req) {
-        insert_obj_helper *help_data = (insert_obj_helper *)work_req->data;
-        work_data *data = MemSaver::Default()->work_datas_[help_data->idx];
+      index, loop, req,
+      [](uv_work_t *req) {
+        InsertObjHelper *helper = (InsertObjHelper *)req->data;
+        work_data *data = MemSaver::Default()->work_datas_[helper->idx];
 
         DicTable<object_t>::Node *node = new DicTable<object_t>::Node();
-        node->data = help_data->obj;
+        node->data = helper->obj;
         node->next = nullptr;
         data->db->Insert(node);
       },
-      [](uv_work_t *work_req, int status) {
-        insert_obj_helper *help_data = (insert_obj_helper *)work_req->data;
-        help_data->callback(help_data->obj);
-        delete help_data;
-        free(work_req);
+      [](uv_work_t *req, int status) {
+        InsertObjHelper *helper = (InsertObjHelper *)req->data;
+        helper->callback(helper->obj);
+        delete helper;
+        free(req);
       });
 }
 

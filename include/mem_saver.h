@@ -17,11 +17,11 @@ class MemSaver : public Async {
 
   // get obj from memsaver
   void GetObj(uv_loop_t *loop, BufPtr key,
-              std::function<void(ObjPtr)> callback);
+              std::function<void(BufPtr, ObjPtr)> callback);
 
   // get objs from memsaver
   void GetObj(uv_loop_t *loop, BufPtrs keys,
-              std::function<void(ObjPtrs)> callback);
+              std::function<void(BufPtrs, ObjPtrs)> callback);
 
   // insert obj to memsaver
   void InsertObj(uv_loop_t *loop, ObjPtr obj,

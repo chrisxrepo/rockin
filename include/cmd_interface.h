@@ -70,24 +70,24 @@ class Cmd {
   std::shared_ptr<object_t> GetMeta(int dbindex, BufPtr key, std::string &meta,
                                     uint32_t &version) {
     version = 0;
-    auto diskdb = DiskSaver::Default()->GetDB(key);
-    bool exist = diskdb->GetMeta(key, &meta);
-    if (exist && meta.length() >= BASE_META_VALUE_SIZE) {
-      version = META_VALUE_VERSION(meta.c_str());
-      uint8_t type = META_VALUE_TYPE(meta.c_str());
-      uint64_t expire = META_VALUE_EXPIRE(meta.c_str());
-      if (type == Type_None || (expire > 0 && expire <= GetMilliSec())) {
-        return nullptr;
-      }
+    /*  auto diskdb = DiskSaver::Default()->GetDB(key);
+     bool exist = diskdb->GetMeta(key, &meta);
+     if (exist && meta.length() >= BASE_META_VALUE_SIZE) {
+       version = META_VALUE_VERSION(meta.c_str());
+       uint8_t type = META_VALUE_TYPE(meta.c_str());
+       uint64_t expire = META_VALUE_EXPIRE(meta.c_str());
+       if (type == Type_None || (expire > 0 && expire <= GetMilliSec())) {
+         return nullptr;
+       }
 
-      auto obj = make_object();
-      obj->key = key;
-      obj->type = type;
-      obj->encode = META_VALUE_ENCODE(meta.c_str());
-      obj->version = version;
-      obj->expire = expire;
-      return obj;
-    }
+       auto obj = make_object();
+       obj->key = key;
+       obj->type = type;
+       obj->encode = META_VALUE_ENCODE(meta.c_str());
+       obj->version = version;
+       obj->expire = expire;
+       return obj;
+     }*/
     return nullptr;
   }
 
