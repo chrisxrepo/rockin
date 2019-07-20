@@ -382,9 +382,6 @@ void DiskSaver::WriteBatch(int idx, const std::vector<uv__work *> &works) {
   if (works.size() == 0) return;
   DiskRocksdb *rocks = dbs_[idx];
 
-  LOG(INFO) << "partition:" << rocks->partition_name
-            << ", write:" << uv_thread_self();
-
   rocksdb::WriteBatch batch;
   for (size_t i = 0; i < works.size(); i++) {
     uv_work_t *req = container_of(works[i], uv_work_t, work_req);

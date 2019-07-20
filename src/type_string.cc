@@ -8,6 +8,19 @@
 #include "rockin_conn.h"
 #include "type_common.h"
 
+// rocksdb save protocol
+//
+// meta key ->  key
+//
+// meta value-> |     meta value header     |   bulk   |
+//              |     BASE_META_SIZE byte   |  2 byte  |
+//
+// data value-> |     data key header       |  bulk id |
+//              |  BASE_DATA_KEY_SIZE byte  |  2 byte  |
+//
+// meta value->  split byte size
+//
+
 #define STRING_MAX_BULK_SIZE 1024
 #define STRING_META_VALUE_SIZE 2
 #define STRING_KEY_BULK_SIZE 2
@@ -20,7 +33,7 @@
 
 namespace rockin {
 
-BufPtr GenString(BufPtr value, int encode) {
+static inline BufPtr GenString(BufPtr value, int encode) {
   if (value != nullptr && encode == Encode_Int) {
     return make_buffer(Int64ToString(BUF_INT64(value)));
   }
@@ -28,7 +41,7 @@ BufPtr GenString(BufPtr value, int encode) {
   return value;
 }
 
-bool GenInt64(BufPtr str, int encode, int64_t &v) {
+static inline bool GenInt64(BufPtr str, int encode, int64_t &v) {
   if (encode == Encode_Int) {
     v = BUF_INT64(str);
     return true;
@@ -39,173 +52,6 @@ bool GenInt64(BufPtr str, int encode, int64_t &v) {
   }
   return false;
 }
-
-#define CHECK_STRING_META(o, t, e, ex, ob, nb) \
-  (CHECK_META(o, t, e, ex) && (ob) == (nb))
-
-/*
-// meta key ->  key
-//
-// meta value-> |     meta value header     |   bulk   |
-//              |     BASE_META_SIZE byte   |  2 byte  |
-//
-// data value-> |     data key header       |  bulk id |
-//              |  BASE_DATA_KEY_SIZE byte  |  2 byte  |
-//
-// meta value->  split byte size
-//
-bool StringCmd::Update(int dbindex, std::shared_ptr<object_t> obj,
-                       bool update_meta) {
-  auto str_value = OBJ_STRING(obj);
-  size_t bulk = STRING_BULK(str_value->len);
-  if (update_meta) obj->version++;
-
-  KVPairS kvs;
-  for (size_t i = 0; i < bulk; i++) {
-    auto key =
-        make_buffer(BASE_DATA_KEY_SIZE(obj->key->len) + STRING_KEY_BULK_SIZE);
-
-    SET_DATA_KEY_HEADER(key->data, obj->key->data, obj->key->len, obj->version);
-    EncodeFixed16(key->data + BASE_DATA_KEY_SIZE(obj->key->len), i);
-
-    auto value = make_buffer();
-    value->data = str_value->data + (i * STRING_MAX_BULK_SIZE);
-    value->len = (i == (bulk - 1) ? (str_value->len % STRING_MAX_BULK_SIZE)
-                                  : STRING_MAX_BULK_SIZE);
-
-    kvs.push_back(std::make_pair(key, value));
-  }
-
-  auto diskdb = DiskSaver::Default()->GetDB(obj->key);
-  if (update_meta) {
-    BufPtr meta = make_buffer(BASE_META_VALUE_SIZE + STRING_META_VALUE_SIZE);
-    auto str_value = OBJ_STRING(obj);
-    SET_META_VALUE_HEADER(meta->data, obj->type, obj->encode, obj->version,
-                          obj->expire);
-    EncodeFixed16(meta->data + BASE_META_VALUE_SIZE,
-                  STRING_BULK(str_value->len));
-
-    diskdb->SetMetaDatas(dbindex, obj->key, meta, kvs);
-  } else {
-    diskdb->SetDatas(dbindex, kvs);
-  }
-
-  return true;
-}
-
-std::shared_ptr<object_t> StringCmd::GetMeta(int dbindex, BufPtr key,
-                                             uint16_t &bulk,
-                                             uint32_t &version) {
-  bulk = 0;
-  std::string meta;
-  auto obj = Cmd::GetMeta(dbindex, key, meta, version);
-  if (obj != nullptr && obj->type == Type_String &&
-      meta.length() == BASE_META_VALUE_SIZE + STRING_META_VALUE_SIZE) {
-    bulk = DecodeFixed16(meta.c_str() + BASE_META_VALUE_SIZE);
-  }
-  return obj;
-}
-
-std::shared_ptr<object_t> StringCmd::GetObj(int dbindex,
-                                            std::shared_ptr<MemDB> db,
-                                            BufPtr key, bool &type_err,
-                                            uint32_t &version) {
-  version = 0;
-  type_err = false;
-  auto obj = db->Get(dbindex, key);
-  if (obj != nullptr) {
-    if (obj->type != Type_String) {
-      type_err = true;
-      return nullptr;
-    }
-    version = obj->version;
-    return obj;
-  }
-
-  uint16_t bulk = 0;
-  obj = GetMeta(dbindex, key, bulk, version);
-  if (obj == nullptr) {
-    return nullptr;
-  }
-
-  if (obj->type != Type_String) {
-    type_err = true;
-    return nullptr;
-  }
-
-  std::vector<BufPtr> keys;
-  std::vector<std::string> values;
-  for (int i = 0; i < bulk; i++) {
-    int value_len = BASE_DATA_KEY_SIZE(key->len) + STRING_KEY_BULK_SIZE;
-    auto nkey = make_buffer(value_len);
-    SET_DATA_KEY_HEADER(nkey->data, key->data, key->len, version);
-    EncodeFixed16(nkey->data + BASE_DATA_KEY_SIZE(key->len), i);
-
-    keys.push_back(nkey);
-  }
-
-  auto diskdb = DiskSaver::Default()->GetDB(key);
-  auto rets = diskdb->GetDatas(dbindex, keys, &values);
-
-  LOG_IF(FATAL, rets.size() != keys.size()) << "GetDatas rets.size!=keys.size";
-  if (values.size() != rets.size()) {
-    return nullptr;
-  }
-
-  size_t value_length = 0;
-  for (size_t i = 0; i < rets.size(); i++) {
-    if (!rets[i]) {
-      return nullptr;
-    }
-    value_length += values[i].length();
-  }
-
-  size_t offset = 0;
-  auto value = make_buffer(value_length);
-  for (size_t i = 0; i < values.size(); i++) {
-    memcpy(value->data + offset, values[i].c_str(), values[i].length());
-    offset += values[i].length();
-  }
-  obj->value = value;
-  db->Insert(dbindex, obj);
-
-  return obj;
-}
-
-std::shared_ptr<object_t> StringCmd::AddObj(std::shared_ptr<MemDB> db,
-                                            int dbindex, BufPtr key,
-                                            BufPtr value, int type, int encode,
-                                            uint32_t version,
-                                            uint64_t expire_ms) {
-  auto obj = make_object();
-  obj->type = type;
-  obj->encode = encode;
-  obj->version = version;
-  obj->key = key;
-  obj->value = value;
-  obj->expire = expire_ms;
-  db->Insert(dbindex, obj);
-  this->Update(dbindex, obj, true);
-  return obj;
-}
-
-std::shared_ptr<object_t> StringCmd::UpdateObj(
-    std::shared_ptr<MemDB> db, int dbindex, std::shared_ptr<object_t> obj,
-    BufPtr value, int type, int encode, uint64_t expire_ms, int old_bulk) {
-  bool update_meta = false;
-  if (old_bulk == 0 && obj->value != nullptr) {
-    update_meta = !CHECK_STRING_META(obj, type, encode, expire_ms,
-                                     (STRING_BULK(OBJ_STRING(obj)->len)),
-                                     STRING_BULK(value->len));
-  } else {
-    update_meta = !CHECK_STRING_META(obj, type, encode, expire_ms, old_bulk,
-                                     STRING_BULK(value->len));
-  }
-  OBJ_SET_VALUE(obj, value, type, encode);
-  db->UpdateExpire(dbindex, obj, expire_ms);
-  Update(dbindex, obj, update_meta);
-  return obj;
-}*/
 
 static inline BufPtrs GetStringFieldKeys(BufPtr mkey, uint32_t version,
                                          uint16_t bulk) {
@@ -229,56 +75,108 @@ static inline BufPtrs GetStringFieldValues(BufPtr value) {
   } else {
     int bulk = STRING_BULK(value->len);
     for (int i = 0; i < bulk; i++) {
-      auto value = make_buffer();
-      value->data = value->data + (i * STRING_MAX_BULK_SIZE);
-      value->len = (i == (bulk - 1) ? (value->len % STRING_MAX_BULK_SIZE)
-                                    : STRING_MAX_BULK_SIZE);
+      auto new_value = make_buffer();
+      new_value->data = value->data + (i * STRING_MAX_BULK_SIZE);
+      new_value->len = (i == (bulk - 1) ? (value->len % STRING_MAX_BULK_SIZE)
+                                        : STRING_MAX_BULK_SIZE);
+      values.push_back(new_value);
     }
+    values.push_back(value);
   }
   return values;
 }
 
-void GetStringObj(std::shared_ptr<RockinConn> conn, BufPtr key,
-                  std::function<void(BufPtr, ObjPtr, bool, uint64_t)> cb) {
+// key object  version type_err
+typedef std::function<void(BufPtr, ObjPtr, uint64_t, bool)> GetObjCB;
+
+static inline ObjPtr GetMetaResult(bool exist, BufPtr mkey,
+                                   const std::string &meta, uint32_t &version,
+                                   GetObjCB cb) {
+  version = 0;
+  if (!exist || meta.length() < BASE_META_VALUE_SIZE) {
+    if (cb) cb(mkey, nullptr, 0, false);
+    return nullptr;
+  }
+
+  version = META_VALUE_VERSION(meta.c_str());
+  uint8_t type = META_VALUE_TYPE(meta.c_str());
+  uint16_t expire = META_VALUE_EXPIRE(meta.c_str());
+  if (type != Type_String ||
+      meta.length() != BASE_META_VALUE_SIZE + STRING_META_VALUE_SIZE) {
+    if (cb) cb(mkey, nullptr, version, type == Type_None ? false : true);
+    return nullptr;
+  }
+
+  if (expire > 0 && GetMilliSec() >= expire) {
+    if (cb) cb(mkey, nullptr, version, false);
+    return nullptr;
+  }
+
+  auto obj = make_object(mkey);
+  obj->type = type;
+  obj->encode = META_VALUE_ENCODE(meta.c_str());
+  obj->version = version;
+  obj->expire = expire;
+  return obj;
+}
+
+static inline ObjPtr GetValuesResult(ObjPtr obj,
+                                     const std::vector<bool> &exists,
+                                     const std::vector<std::string> &values,
+                                     GetObjCB cb) {
+  if (exists.size() == 0 || values.size() != values.size()) {
+    cb(obj->key, nullptr, obj->version, false);
+    return nullptr;
+  }
+  size_t value_length = 0;
+  for (size_t i = 0; i < exists.size(); i++) {
+    if (!exists[i]) {
+      cb(obj->key, nullptr, obj->version, false);
+      return nullptr;
+    }
+    value_length += values[i].length();
+  }
+
+  size_t offset = 0;
+  auto value = make_buffer(value_length);
+  for (size_t i = 0; i < values.size(); i++) {
+    memcpy(value->data + offset, values[i].c_str(), values[i].length());
+    offset += values[i].length();
+  }
+  obj->value = value;
+  return obj;
+}
+
+void GetStringObj(std::shared_ptr<RockinConn> conn, BufPtr key, GetObjCB cb) {
+  // step1, get object from memory
   MemSaver::Default()->GetObj(
       conn->loop(), key, [conn, cb](BufPtr key, ObjPtr obj) {
         if (obj == nullptr) {
+          // step2, get meta from rocksdb
           DiskSaver::Default()->GetMeta(
               conn->loop(), key,
               [conn, cb](bool exist, BufPtr mkey, const std::string &meta) {
-                if (!exist || meta.length() < BASE_META_VALUE_SIZE) {
-                  cb(mkey, nullptr, 0, false);
-                  return;
-                }
+                uint32_t version = 0;
+                auto obj = GetMetaResult(exist, mkey, meta, version, cb);
+                if (obj == nullptr) return;
 
-                uint8_t type = META_VALUE_TYPE(meta.c_str());
-                uint32_t version = META_VALUE_VERSION(meta.c_str());
-                uint16_t expire = META_VALUE_EXPIRE(meta.c_str());
-                if (type != Type_String ||
-                    meta.length() !=
-                        BASE_META_VALUE_SIZE + STRING_META_VALUE_SIZE) {
-                  cb(mkey, nullptr, version, type == Type_None ? false : true);
-                  return;
-                }
-
-                if (expire > 0 && GetMilliSec() >= expire) {
-                  cb(mkey, nullptr, version, false);
-                  return;
-                }
-
-                auto obj = make_object(mkey);
-                obj->type = type;
-                obj->encode = META_VALUE_ENCODE(meta.c_str());
-                obj->version = version;
-                obj->expire = expire;
-                uint16_t bulk =
-                    DecodeFixed16(meta.c_str() + BASE_META_VALUE_SIZE);
-
+                // step3, get field value form rocksdb
+                auto field_keys = GetStringFieldKeys(
+                    mkey, obj->version,
+                    DecodeFixed16(meta.c_str() + BASE_META_VALUE_SIZE));
                 DiskSaver::Default()->GetValues(
-                    conn->loop(), mkey, GetStringFieldKeys(mkey, version, bulk),
-                    [](BufPtr mkey, const std::vector<bool> &exists,
-                       const std::vector<std::string> &values) {
-                      //
+                    conn->loop(), mkey, field_keys,
+                    [conn, obj, cb](BufPtr mkey,
+                                    const std::vector<bool> &exists,
+                                    const std::vector<std::string> &values) {
+                      if (GetValuesResult(obj, exists, values, cb) == nullptr)
+                        return;
+
+                      // step4, insert into memory
+                      MemSaver::Default()->InsertObj(
+                          conn->loop(), obj, [cb](ObjPtr obj) {
+                            cb(obj->key, obj, obj->version, false);
+                          });
                     });
               });
         } else {
@@ -294,8 +192,6 @@ ObjPtr UpdateStringObj(std::shared_ptr<RockinConn> conn, ObjPtr obj, BufPtr key,
                        BufPtr value, uint8_t encode, int32_t version,
                        uint64_t expire, bool update_meta,
                        std::function<void(ObjPtr)> cb) {
-  LOG(INFO) << "UpdateStringObj start";
-
   if (update_meta) version++;
   auto new_obj = obj;
   if (new_obj == nullptr) {
@@ -309,23 +205,25 @@ ObjPtr UpdateStringObj(std::shared_ptr<RockinConn> conn, ObjPtr obj, BufPtr key,
 
   std::atomic<int> *async_num = new std::atomic<int>(0);
 
-  //向内存中添加Object
+  // step1, insert object to memory or update expire
   if (obj == nullptr) {
     async_num->fetch_add(1);
     MemSaver::Default()->InsertObj(conn->loop(), new_obj,
                                    [cb, async_num](ObjPtr obj) {
-                                     LOG(INFO) << "UpdateStringObj insertObj";
                                      async_num->fetch_sub(1);
-                                     if (async_num->load() <= 0) cb(obj);
+                                     if (async_num->load() <= 0) {
+                                       cb(obj);
+                                       delete async_num;
+                                     }
                                    });
   } else if (obj->expire != expire) {
-    //更新内存Object过期信息
   }
 
   uint16_t bulk = STRING_BULK(value->len);
   BufPtrs keys = GetStringFieldKeys(key, version, bulk);
   BufPtrs values = GetStringFieldValues(value);
 
+  // step2, update object to rocksdb
   async_num->fetch_add(1);
   if (update_meta) {
     BufPtr meta = make_buffer(BASE_META_VALUE_SIZE + STRING_META_VALUE_SIZE);
@@ -334,16 +232,20 @@ ObjPtr UpdateStringObj(std::shared_ptr<RockinConn> conn, ObjPtr obj, BufPtr key,
 
     DiskSaver::Default()->Set(conn->loop(), key, meta, keys, values,
                               [new_obj, cb, async_num](bool success) {
-                                LOG(INFO) << "UpdateStringObj DiskSaver.Set-1";
                                 async_num->fetch_sub(1);
-                                if (async_num->load() <= 0) cb(new_obj);
+                                if (async_num->load() <= 0) {
+                                  cb(new_obj);
+                                  delete async_num;
+                                }
                               });
   } else {
     DiskSaver::Default()->Set(conn->loop(), key, keys, values,
                               [new_obj, cb, async_num](bool success) {
-                                LOG(INFO) << "UpdateStringObj DiskSaver.Set-2";
                                 async_num->fetch_sub(1);
-                                if (async_num->load() <= 0) cb(new_obj);
+                                if (async_num->load() <= 0) {
+                                  cb(new_obj);
+                                  delete async_num;
+                                }
                               });
   }
 
@@ -352,36 +254,27 @@ ObjPtr UpdateStringObj(std::shared_ptr<RockinConn> conn, ObjPtr obj, BufPtr key,
 
 void SetStringForce(std::shared_ptr<RockinConn> conn, BufPtr key, BufPtr value,
                     uint64_t expire_ms, std::function<void(ObjPtr)> cb) {
-  //从内存中获取Object
+  // step1, get object from memory
   MemSaver::Default()->GetObj(
       conn->loop(), key, [conn, value, expire_ms, cb](BufPtr key, ObjPtr obj) {
         if (obj == nullptr) {
-          // 内存中不存在Object, 从rocksdb中获取Meta信息
+          // step2, get meta from rocksdb
           DiskSaver::Default()->GetMeta(
               conn->loop(), key,
               [conn, value, expire_ms, cb](bool exist, BufPtr mkey,
                                            const std::string &meta) {
-                LOG(INFO) << "get meta callback";
+                uint32_t version = 0;
+                auto obj = GetMetaResult(exist, mkey, meta, version, nullptr);
+                bool update_meta = false;
+                if (obj == nullptr || obj->type != Type_String ||
+                    obj->encode != Encode_Raw || obj->expire != expire_ms ||
+                    DecodeFixed16(meta.c_str() + BASE_META_VALUE_SIZE) !=
+                        STRING_BULK(value->len))
+                  update_meta = true;
 
-                if (exist) {
-                  UpdateStringObj(conn, nullptr, mkey, value, Encode_Raw, 0,
-                                  expire_ms, true, cb);
-                } else {
-                  uint8_t type = META_VALUE_TYPE(meta.c_str());
-                  uint8_t encode = META_VALUE_ENCODE(meta.c_str());
-                  uint32_t version = META_VALUE_VERSION(meta.c_str());
-                  uint64_t expire = META_VALUE_EXPIRE(meta.c_str());
-                  uint16_t bulk =
-                      DecodeFixed16(meta.c_str() + BASE_META_VALUE_SIZE);
-
-                  bool update_meta = false;
-                  // 检测Meta是否需要更新
-                  if (type != Type_String || encode != Encode_Raw ||
-                      expire != expire_ms || bulk != STRING_BULK(value->len))
-                    update_meta = true;
-                  UpdateStringObj(conn, nullptr, mkey, value, Encode_Raw,
-                                  version, expire_ms, update_meta, cb);
-                }
+                // step3, udpate object to momery and rocksdb
+                UpdateStringObj(conn, obj, mkey, value, Encode_Raw, version,
+                                expire_ms, update_meta, cb);
               });
         } else {
           bool update_meta = false;
@@ -389,7 +282,8 @@ void SetStringForce(std::shared_ptr<RockinConn> conn, BufPtr key, BufPtr value,
               obj->expire != expire_ms ||
               STRING_BULK(OBJ_STRING(obj)->len) != STRING_BULK(value->len))
             update_meta = true;
-          UpdateStringObj(conn, obj, obj->key, value, Encode_Raw, obj->version,
+          // step2, udpate object to momery and rocksdb
+          UpdateStringObj(conn, obj, key, value, Encode_Raw, obj->version,
                           expire_ms, update_meta, cb);
         }
       });
@@ -400,7 +294,7 @@ void GetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {
   auto &args = cmd_args->args();
   GetStringObj(conn, args[1],
-               [conn](BufPtr key, ObjPtr obj, bool type_err, uint64_t version) {
+               [conn](BufPtr key, ObjPtr obj, uint64_t version, bool type_err) {
                  if (type_err) {
                    conn->ReplyTypeError();
                  } else if (obj == nullptr) {
@@ -415,8 +309,10 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                 std::shared_ptr<RockinConn> conn) {
   auto &args = cmd_args->args();
   SetStringForce(conn, args[1], args[2], 0, [conn](ObjPtr obj) {
-    //
-    conn->ReplyOk();
+    if (obj == nullptr)
+      conn->ReplyNil();
+    else
+      conn->ReplyOk();
   });
 
   /*  auto &args = cmd_args->args();
@@ -445,11 +341,11 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
          static auto g_set_time_err =
              make_buffer("ERR invalid expire time in set");
 
- #define OBJ_SET_NO_FLAGS 0
- #define OBJ_SET_NX (1 << 0)
- #define OBJ_SET_XX (1 << 1)
- #define OBJ_SET_EX (1 << 2)
- #define OBJ_SET_PX (1 << 3)
+  #define OBJ_SET_NO_FLAGS 0
+  #define OBJ_SET_NX (1 << 0)
+  #define OBJ_SET_XX (1 << 1)
+  #define OBJ_SET_EX (1 << 2)
+  #define OBJ_SET_PX (1 << 3)
 
          BufPtr expire = nullptr;
          int flags = OBJ_SET_NO_FLAGS;
@@ -533,7 +429,7 @@ void SetCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
          }
          conn->ReplyOk();
        });*/
-}
+}  // namespace rockin
 
 void AppendCmd::Do(std::shared_ptr<CmdArgs> cmd_args,
                    std::shared_ptr<RockinConn> conn) {
