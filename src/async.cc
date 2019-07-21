@@ -95,6 +95,8 @@ static void uv__queue_done(struct uv__work *w, int err) {
 
 int Async::AsyncQueueWork(int idx, uv_loop_t *loop, uv_work_t *req,
                           uv_work_cb work_cb, uv_after_work_cb after_work_cb) {
+  if (loop == nullptr) return -1;
+
   uv__req_init(loop, req, UV_WORK);
   req->loop = loop;
   req->work_cb = work_cb;
