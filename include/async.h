@@ -4,6 +4,12 @@
 #include "queue.h"
 
 namespace rockin {
+struct AsyncQueue {
+  QUEUE queue;
+  uv_cond_t cond;
+  uv_mutex_t mutex;
+};
+
 class Async {
  public:
   Async();

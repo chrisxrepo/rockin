@@ -38,21 +38,13 @@ struct DiskRocksdb {
 };
 
 DiskSaver::DiskSaver()
-    : partition_num_(0),
-      read_thread_num_(0),
-      write_thread_num_(0),
-      write_queue_(nullptr),
-      snum_(0) {
+    : partition_num_(0), read_thread_num_(0), write_thread_num_(0) {
   // init mutex
   int retcode = uv_mutex_init(&read_mutex_);
-  LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
-  retcode = uv_mutex_init(&write_mutex_);
   LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
 
   // init cond
   retcode = uv_cond_init(&read_cond_);
-  LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
-  retcode = uv_cond_init(&write_cond_);
   LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
 
   // init queue
@@ -75,13 +67,16 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
   env->SetBackgroundThreads(2, rocksdb::Env::LOW);
   env->SetBackgroundThreads(1, rocksdb::Env::HIGH);
 
-  write_queue_ = (QUEUE *)malloc(sizeof(QUEUE) * partition_num);
   meta_cache_ = rocksdb::NewLRUCache(1 << 30);
   data_cache_ = rocksdb::NewLRUCache(128 << 20);
 
   for (int i = 0; i < partition_num; i++) {
     // init write queue
-    QUEUE_INIT(write_queue_ + i);
+    AsyncQueue *wq = new AsyncQueue;
+    QUEUE_INIT(&wq->queue);
+    uv_mutex_init(&wq->mutex);
+    uv_cond_init(&wq->cond);
+    writes_.push_back(wq);
 
     DiskRocksdb *rocks = new DiskRocksdb();
     std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
@@ -204,22 +199,22 @@ static inline QUEUE *NextQueue(QUEUE *queues, size_t qcnt, uint64_t &snum,
 }
 
 void DiskSaver::WriteAsyncWork(int idx) {
+  AsyncQueue *write = writes_[idx];
+
   while (true) {
-    uv_mutex_lock(&write_mutex_);
-    while (!QueueArrayTest(write_queue_, partition_num_)) {
-      uv_cond_wait(&write_cond_, &write_mutex_);
+    uv_mutex_lock(&write->mutex);
+    while (!QUEUE_EMPTY(&write->queue)) {
+      uv_cond_wait(&write->cond, &write->mutex);
     }
 
-    int idx = 0;
-    QUEUE *queue = NextQueue(write_queue_, partition_num_, snum_, idx);
     std::vector<uv__work *> works;
-    while (queue && !QUEUE_EMPTY(queue)) {
-      QUEUE *q = QUEUE_HEAD(&queue);
+    while (!QUEUE_EMPTY(&write->queue)) {
+      QUEUE *q = QUEUE_HEAD(&write->queue);
       QUEUE_REMOVE(q);
       uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
       works.push_back(w);
     }
-    uv_mutex_unlock(&write_mutex_);
+    uv_mutex_unlock(&write->mutex);
 
     if (works.size() > 0) {
       this->WriteBatch(idx, works);
@@ -244,10 +239,10 @@ void DiskSaver::PostWork(int idx, QUEUE *q) {
     uv_cond_signal(&read_cond_);
     uv_mutex_unlock(&read_mutex_);
   } else if (idx < partition_num_) {
-    uv_mutex_lock(&write_mutex_);
-    QUEUE_INSERT_TAIL(write_queue_ + idx, q);
-    uv_cond_signal(&write_cond_);
-    uv_mutex_unlock(&write_mutex_);
+    uv_mutex_lock(&writes_[idx]->mutex);
+    QUEUE_INSERT_TAIL(&writes_[idx]->queue, q);
+    uv_cond_signal(&writes_[idx]->cond);
+    uv_mutex_unlock(&writes_[idx]->mutex);
   } else {
     LOG(ERROR) << "PostWork invilid idx:" << idx;
   }

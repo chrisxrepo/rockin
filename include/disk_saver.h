@@ -64,10 +64,10 @@ class DiskSaver : public Async {
   std::shared_ptr<rocksdb::Cache> meta_cache_;
   std::shared_ptr<rocksdb::Cache> data_cache_;
 
-  uv_mutex_t read_mutex_, write_mutex_;
-  uv_cond_t read_cond_, write_cond_;
-  QUEUE read_queue_, *write_queue_;
-  uint64_t snum_;
+  uv_mutex_t read_mutex_;
+  uv_cond_t read_cond_;
+  QUEUE read_queue_;
+  std::vector<AsyncQueue *> writes_;
 };
 
 }  // namespace rockin
