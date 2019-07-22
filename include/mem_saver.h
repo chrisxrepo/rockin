@@ -4,7 +4,7 @@
 #include "mem_alloc.h"
 
 namespace rockin {
-struct work_data;
+struct MemAsyncQueue;
 
 class MemSaver : public Async {
  public:
@@ -37,6 +37,6 @@ class MemSaver : public Async {
 
  private:
   size_t thread_num_;
-  std::vector<work_data *> work_datas_;
+  std::vector<MemAsyncQueue *> asyncs_;
 };
 }  // namespace rockin

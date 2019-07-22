@@ -12,7 +12,8 @@ class Cache;
 }
 
 namespace rockin {
-struct DiskRocksdb;
+struct DiskDB;
+struct WriteAsyncQueue;
 
 class DiskSaver : public Async {
  public:
@@ -51,7 +52,7 @@ class DiskSaver : public Async {
   void ReadAsyncWork(int idx);
   void WriteAsyncWork(int idx);
   void PostWork(int idx, QUEUE *q) override;
-  DiskRocksdb *GetDiskRocksdb(BufPtr key);
+  DiskDB *GetDiskRocksdb(BufPtr key);
   void WriteBatch(int idx, const std::vector<uv__work *> &works);
 
  private:
@@ -60,14 +61,12 @@ class DiskSaver : public Async {
   size_t read_thread_num_;
   size_t write_thread_num_;
 
-  std::vector<DiskRocksdb *> dbs_;
+  std::vector<DiskDB *> dbs_;
   std::shared_ptr<rocksdb::Cache> meta_cache_;
   std::shared_ptr<rocksdb::Cache> data_cache_;
 
-  uv_mutex_t read_mutex_;
-  uv_cond_t read_cond_;
-  QUEUE read_queue_;
-  std::vector<AsyncQueue *> writes_;
+  AsyncQueue read_async_;
+  std::vector<WriteAsyncQueue *> write_asyncs_;
 };
 
 }  // namespace rockin

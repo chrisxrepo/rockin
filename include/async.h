@@ -1,13 +1,29 @@
 #pragma once
+#include <glog/logging.h>
 #include <uv.h>
 #include <vector>
 #include "queue.h"
+#include "utils.h"
 
 namespace rockin {
+
 struct AsyncQueue {
   QUEUE queue;
   uv_cond_t cond;
   uv_mutex_t mutex;
+
+  AsyncQueue() {
+    // init mutex
+    int retcode = uv_mutex_init(&mutex);
+    LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
+
+    // init cond
+    retcode = uv_cond_init(&cond);
+    LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
+
+    // init queue
+    QUEUE_INIT(&queue);
+  }
 };
 
 class Async {

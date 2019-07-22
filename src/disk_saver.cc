@@ -29,7 +29,7 @@ void DiskSaver::DestoryDefault() {
   }
 }
 
-struct DiskRocksdb {
+struct DiskDB {
   rocksdb::DB *db;
   rocksdb::ColumnFamilyHandle *mt_handle;
   rocksdb::ColumnFamilyHandle *db_handle;
@@ -37,19 +37,15 @@ struct DiskRocksdb {
   int partition_id;
 };
 
+struct WriteAsyncQueue : AsyncQueue {
+  std::vector<QUEUE *> queues;
+  uint64_t snum;
+
+  WriteAsyncQueue() : snum(0) {}
+};
+
 DiskSaver::DiskSaver()
-    : partition_num_(0), read_thread_num_(0), write_thread_num_(0) {
-  // init mutex
-  int retcode = uv_mutex_init(&read_mutex_);
-  LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
-
-  // init cond
-  retcode = uv_cond_init(&read_cond_);
-  LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
-
-  // init queue
-  QUEUE_INIT(&read_queue_);
-}
+    : partition_num_(0), read_thread_num_(0), write_thread_num_(0) {}
 
 DiskSaver::~DiskSaver() {
   LOG(INFO) << "destroy rocks pool...";
@@ -70,15 +66,12 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
   meta_cache_ = rocksdb::NewLRUCache(1 << 30);
   data_cache_ = rocksdb::NewLRUCache(128 << 20);
 
-  for (int i = 0; i < partition_num; i++) {
-    // init write queue
-    AsyncQueue *wq = new AsyncQueue;
-    QUEUE_INIT(&wq->queue);
-    uv_mutex_init(&wq->mutex);
-    uv_cond_init(&wq->cond);
-    writes_.push_back(wq);
+  for (int i = 0; i < write_thread_num; i++) {
+    write_asyncs_.push_back(new WriteAsyncQueue);
+  }
 
-    DiskRocksdb *rocks = new DiskRocksdb();
+  for (int i = 0; i < partition_num; i++) {
+    DiskDB *db = new DiskDB();
     std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
     std::string partition_name = Format("partition_%05d", i);
     std::string dbpath = path + "/" + partition_name;
@@ -106,8 +99,8 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
     db_cf_ops.table_factory.reset(
         rocksdb::NewBlockBasedTableFactory(db_table_ops));
     db_cf_ops.compaction_filter_factory =
-        std::make_shared<DataCompactFilterFactory>(
-            partition_name + ":data", &rocks->db, &rocks->mt_handle);
+        std::make_shared<DataCompactFilterFactory>(partition_name + ":data",
+                                                   &db->db, &db->mt_handle);
     column_families.push_back(
         rocksdb::ColumnFamilyDescriptor("data", db_cf_ops));
 
@@ -132,19 +125,22 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
 
     // ops.write_buffer_manager
     auto status =
-        rocksdb::DB::Open(ops, dbpath, column_families, &handles, &rocks->db);
+        rocksdb::DB::Open(ops, dbpath, column_families, &handles, &db->db);
     LOG_IF(FATAL, !status.ok())
         << "rocksdb::DB::Open status:" << status.getState();
     LOG_IF(FATAL, column_families.size() != 3)
         << "column family size:" << column_families.size();
 
-    rocks->partition_id = i;
-    rocks->partition_name = partition_name;
-    rocks->mt_handle = handles[0];
-    rocks->db_handle = handles[1];
+    db->partition_id = i;
+    db->partition_name = partition_name;
+    db->mt_handle = handles[0];
+    db->db_handle = handles[1];
     LOG(INFO) << "open rocksdb:" << partition_name;
+    dbs_.push_back(db);
 
-    dbs_.push_back(rocks);
+    WriteAsyncQueue *async = write_asyncs_[i % write_thread_num];
+    async->queues.push_back((QUEUE *)malloc(sizeof(QUEUE)));
+    QUEUE_INIT(async->queues[async->queues.size() - 1]);
   }
 
   return this->InitAsync(read_thread_num + write_thread_num);
@@ -158,15 +154,17 @@ void DiskSaver::AsyncWork(int idx) {
 }
 
 void DiskSaver::ReadAsyncWork(int idx) {
+  AsyncQueue *async = &read_async_;
+
   while (true) {
-    uv_mutex_lock(&read_mutex_);
-    while (QUEUE_EMPTY(&read_queue_)) {
-      uv_cond_wait(&read_cond_, &read_mutex_);
+    uv_mutex_lock(&async->mutex);
+    while (QUEUE_EMPTY(&async->queue)) {
+      uv_cond_wait(&async->cond, &async->mutex);
     }
 
-    QUEUE *q = QUEUE_HEAD(&read_queue_);
+    QUEUE *q = QUEUE_HEAD(&async->queue);
     QUEUE_REMOVE(q);
-    uv_mutex_unlock(&read_mutex_);
+    uv_mutex_unlock(&async->mutex);
 
     uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
     w->work(w);
@@ -180,44 +178,46 @@ void DiskSaver::ReadAsyncWork(int idx) {
   }
 }
 
-static inline bool QueueArrayTest(QUEUE *queues, size_t cnt) {
-  for (size_t i = 0; i < cnt; i++) {
-    if (!QUEUE_EMPTY(queues + i)) return true;
+static inline bool QueueArrayEmpty(std::vector<QUEUE *> &queues) {
+  for (size_t i = 0; i < queues.size(); i++) {
+    if (!QUEUE_EMPTY(queues[i])) return false;
   }
-  return false;
+  return true;
 }
 
-static inline QUEUE *NextQueue(QUEUE *queues, size_t qcnt, uint64_t &snum,
-                               int &idx) {
-  for (size_t i = 0; i < qcnt; i++) {
-    idx = (snum++) % qcnt;
-    if (!QUEUE_EMPTY(queues + idx)) {
-      return (queues + idx);
+static inline QUEUE *NextQueue(std::vector<QUEUE *> &queues, uint64_t &snum,
+                               int &pos) {
+  for (size_t i = 0; i < queues.size(); i++) {
+    pos = (snum++) % queues.size();
+    if (!QUEUE_EMPTY(queues[pos])) {
+      return queues[pos];
     }
   }
   return nullptr;
 }
 
 void DiskSaver::WriteAsyncWork(int idx) {
-  AsyncQueue *write = writes_[idx];
+  WriteAsyncQueue *async = write_asyncs_[idx];
 
   while (true) {
-    uv_mutex_lock(&write->mutex);
-    while (!QUEUE_EMPTY(&write->queue)) {
-      uv_cond_wait(&write->cond, &write->mutex);
+    uv_mutex_lock(&async->mutex);
+    while (QueueArrayEmpty(async->queues)) {
+      uv_cond_wait(&async->cond, &async->mutex);
     }
 
+    int queue_pos;
     std::vector<uv__work *> works;
-    while (!QUEUE_EMPTY(&write->queue)) {
-      QUEUE *q = QUEUE_HEAD(&write->queue);
+    QUEUE *queue = NextQueue(async->queues, async->snum, queue_pos);
+    while (queue && !QUEUE_EMPTY(queue)) {
+      QUEUE *q = QUEUE_HEAD(queue);
       QUEUE_REMOVE(q);
       uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
       works.push_back(w);
     }
-    uv_mutex_unlock(&write->mutex);
+    uv_mutex_unlock(&async->mutex);
 
     if (works.size() > 0) {
-      this->WriteBatch(idx, works);
+      this->WriteBatch(queue_pos * write_thread_num_ + idx, works);
 
       // async done
       for (size_t i = 0; i < works.size(); i++) {
@@ -234,21 +234,23 @@ void DiskSaver::WriteAsyncWork(int idx) {
 
 void DiskSaver::PostWork(int idx, QUEUE *q) {
   if (idx < 0) {
-    uv_mutex_lock(&read_mutex_);
-    QUEUE_INSERT_TAIL(&read_queue_, q);
-    uv_cond_signal(&read_cond_);
-    uv_mutex_unlock(&read_mutex_);
+    AsyncQueue *async = &read_async_;
+    uv_mutex_lock(&async->mutex);
+    QUEUE_INSERT_TAIL(&async->queue, q);
+    uv_cond_signal(&async->cond);
+    uv_mutex_unlock(&async->mutex);
   } else if (idx < partition_num_) {
-    uv_mutex_lock(&writes_[idx]->mutex);
-    QUEUE_INSERT_TAIL(&writes_[idx]->queue, q);
-    uv_cond_signal(&writes_[idx]->cond);
-    uv_mutex_unlock(&writes_[idx]->mutex);
+    WriteAsyncQueue *async = write_asyncs_[idx % write_thread_num_];
+    uv_mutex_lock(&async->mutex);
+    QUEUE_INSERT_TAIL(async->queues[idx / write_thread_num_], q);
+    uv_cond_signal(&async->cond);
+    uv_mutex_unlock(&async->mutex);
   } else {
-    LOG(ERROR) << "PostWork invilid idx:" << idx;
+    LOG(ERROR) << "PostWork invilid partition idx:" << idx;
   }
 }
 
-DiskRocksdb *DiskSaver::GetDiskRocksdb(BufPtr key) {
+DiskDB *DiskSaver::GetDiskRocksdb(BufPtr key) {
   if (DiskSaver::Default()->partition_num_ == 1) return dbs_[0];
   int index = rockin::SimpleHash(key->data, key->len) % partition_num_;
   return dbs_[index];
@@ -311,9 +313,9 @@ void DiskSaver::GetMeta(uv_loop_t *loop, BufPtr mkey, MetaCB cb) {
   AsyncQueueWork(-1, loop, req,
                  [](uv_work_t *req) {
                    GetMetaHelper *helper = (GetMetaHelper *)req->data;
-                   DiskRocksdb *rocks =
+                   DiskDB *db =
                        DiskSaver::Default()->GetDiskRocksdb(helper->mkey);
-                   helper->exist = GetFromRocksdb(rocks->db, rocks->mt_handle,
+                   helper->exist = GetFromRocksdb(db->db, db->mt_handle,
                                                   helper->mkey, helper->value);
                  },
                  [](uv_work_t *req, int status) {
@@ -347,9 +349,9 @@ void DiskSaver::GetValues(uv_loop_t *loop, BufPtr mkey, BufPtrs keys,
       -1, loop, req,
       [](uv_work_t *req) {
         GetArrayHelper *helper = (GetArrayHelper *)req->data;
-        DiskRocksdb *rocks = DiskSaver::Default()->GetDiskRocksdb(helper->mkey);
+        DiskDB *db = DiskSaver::Default()->GetDiskRocksdb(helper->mkey);
 
-        bool exist = GetFromRocksdb(rocks->db, rocks->db_handle, helper->keys,
+        bool exist = GetFromRocksdb(db->db, db->db_handle, helper->keys,
                                     helper->exists, helper->values);
         if (!exist) {
           helper->exists.clear();
@@ -375,17 +377,16 @@ struct SetHelper {
 
 void DiskSaver::WriteBatch(int idx, const std::vector<uv__work *> &works) {
   if (works.size() == 0) return;
-  DiskRocksdb *rocks = dbs_[idx];
+  DiskDB *db = dbs_[idx];
 
   rocksdb::WriteBatch batch;
   for (size_t i = 0; i < works.size(); i++) {
     uv_work_t *req = container_of(works[i], uv_work_t, work_req);
     SetHelper *helper = (SetHelper *)req->data;
     if (helper->meta != nullptr) {
-      auto status =
-          batch.Put(rocks->mt_handle,
-                    rocksdb::Slice(helper->mkey->data, helper->mkey->len),
-                    rocksdb::Slice(helper->meta->data, helper->meta->len));
+      auto status = batch.Put(
+          db->mt_handle, rocksdb::Slice(helper->mkey->data, helper->mkey->len),
+          rocksdb::Slice(helper->meta->data, helper->meta->len));
       if (!status.ok()) {
         LOG(ERROR) << "WriteBatch Put:" << status.ToString();
         return;
@@ -397,7 +398,7 @@ void DiskSaver::WriteBatch(int idx, const std::vector<uv__work *> &works) {
       auto key = helper->keys[j];
       auto value = helper->values[j];
       auto status =
-          batch.Put(rocks->db_handle, rocksdb::Slice(key->data, key->len),
+          batch.Put(db->db_handle, rocksdb::Slice(key->data, key->len),
                     rocksdb::Slice(value->data, value->len));
       if (!status.ok()) {
         LOG(ERROR) << "WriteBatch Put:" << status.ToString();
@@ -406,7 +407,7 @@ void DiskSaver::WriteBatch(int idx, const std::vector<uv__work *> &works) {
     }
   }
 
-  auto status = rocks->db->Write(rocksdb::WriteOptions(), &batch);
+  auto status = db->db->Write(rocksdb::WriteOptions(), &batch);
   if (!status.ok()) {
     for (size_t i = 0; i < works.size(); i++) {
       uv_work_t *req = container_of(works[i], uv_work_t, work_req);

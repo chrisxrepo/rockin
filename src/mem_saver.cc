@@ -63,49 +63,38 @@ MemSaver::MemSaver() : thread_num_(0) {}
 
 MemSaver::~MemSaver() {}
 
-struct work_data {
+struct MemAsyncQueue : AsyncQueue {
   std::shared_ptr<DicTable<object_t>> db;
-
-  uv_cond_t cond;
-  uv_mutex_t mutex;
-  QUEUE queue;
 };
 
 bool MemSaver::Init(size_t thread_num) {
   thread_num_ = thread_num;
 
   for (size_t i = 0; i < thread_num; i++) {
-    work_data *data = new work_data();
+    MemAsyncQueue *async = new MemAsyncQueue();
 
     // memory database
-    data->db =
+    async->db =
         std::make_shared<DicTable<object_t>>(obj_key_equal, obj_key_hash);
 
-    int retcode = uv_mutex_init(&data->mutex);
-    LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
-
-    retcode = uv_cond_init(&data->cond);
-    LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
-
-    QUEUE_INIT(&data->queue);
-    work_datas_.push_back(data);
+    asyncs_.push_back(async);
   }
 
   return this->InitAsync(thread_num);
 }
 
 void MemSaver::AsyncWork(int idx) {
-  work_data *data = work_datas_[idx];
+  MemAsyncQueue *async = asyncs_[idx];
 
   while (true) {
-    uv_mutex_lock(&data->mutex);
-    while (QUEUE_EMPTY(&data->queue)) {
-      uv_cond_wait(&data->cond, &data->mutex);
+    uv_mutex_lock(&async->mutex);
+    while (QUEUE_EMPTY(&async->queue)) {
+      uv_cond_wait(&async->cond, &async->mutex);
     }
 
-    QUEUE *q = QUEUE_HEAD(&data->queue);
+    QUEUE *q = QUEUE_HEAD(&async->queue);
     QUEUE_REMOVE(q);
-    uv_mutex_unlock(&data->mutex);
+    uv_mutex_unlock(&async->mutex);
 
     uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
     w->work(w);
@@ -120,11 +109,11 @@ void MemSaver::AsyncWork(int idx) {
 }
 
 void MemSaver::PostWork(int idx, QUEUE *q) {
-  work_data *data = work_datas_[idx];
-  uv_mutex_lock(&data->mutex);
-  QUEUE_INSERT_TAIL(&data->queue, q);
-  uv_cond_signal(&data->cond);
-  uv_mutex_unlock(&data->mutex);
+  MemAsyncQueue *async = asyncs_[idx];
+  uv_mutex_lock(&async->mutex);
+  QUEUE_INSERT_TAIL(&async->queue, q);
+  uv_cond_signal(&async->cond);
+  uv_mutex_unlock(&async->mutex);
 }
 
 struct GetObjHelper {
@@ -152,8 +141,8 @@ void MemSaver::GetObj(uv_loop_t *loop, BufPtr key,
       index, loop, req,
       [](uv_work_t *req) {
         GetObjHelper *helper = (GetObjHelper *)req->data;
-        work_data *data = MemSaver::Default()->work_datas_[helper->idx];
-        auto *node = data->db->Get(rockin::make_object(helper->key));
+        MemAsyncQueue *async = MemSaver::Default()->asyncs_[helper->idx];
+        auto *node = async->db->Get(rockin::make_object(helper->key));
         if (node != nullptr) helper->obj = node->data;
       },
       [](uv_work_t *req, int status) {
@@ -193,12 +182,12 @@ void MemSaver::InsertObj(uv_loop_t *loop, ObjPtr obj,
       index, loop, req,
       [](uv_work_t *req) {
         InsertObjHelper *helper = (InsertObjHelper *)req->data;
-        work_data *data = MemSaver::Default()->work_datas_[helper->idx];
+        MemAsyncQueue *async = MemSaver::Default()->asyncs_[helper->idx];
 
         DicTable<object_t>::Node *node = new DicTable<object_t>::Node();
         node->data = helper->obj;
         node->next = nullptr;
-        data->db->Insert(node);
+        async->db->Insert(node);
       },
       [](uv_work_t *req, int status) {
         InsertObjHelper *helper = (InsertObjHelper *)req->data;
