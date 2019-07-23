@@ -69,7 +69,9 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
     rocksdb::ColumnFamilyOptions mt_cf_ops;
     rocksdb::BlockBasedTableOptions mt_table_ops;
     mt_table_ops.block_size = 4096;  // 4k
-    mt_table_ops.cache_index_and_filter_blocks = true;
+    mt_table_ops.partition_filters = true;
+    mt_table_ops.index_type =
+        rocksdb::BlockBasedTableOptions::IndexType::kTwoLevelIndexSearch;
     mt_table_ops.block_cache = meta_cache_;
     mt_table_ops.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, true));
     mt_cf_ops.table_factory.reset(
@@ -82,7 +84,6 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
     rocksdb::ColumnFamilyOptions db_cf_ops;
     rocksdb::BlockBasedTableOptions db_table_ops;
     db_table_ops.block_size = 4096;  // 4k
-    db_table_ops.cache_index_and_filter_blocks = true;
     db_table_ops.block_cache = data_cache_;
     db_table_ops.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, true));
     db_cf_ops.table_factory.reset(
