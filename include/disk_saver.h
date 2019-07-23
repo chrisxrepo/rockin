@@ -13,7 +13,13 @@ class Cache;
 
 namespace rockin {
 struct DiskDB;
-struct WriteAsyncQueue;
+
+struct WriteAsyncQueue : AsyncQueue {
+  std::vector<QUEUE *> queues;
+  uint64_t snum;
+
+  WriteAsyncQueue() : snum(0) {}
+};
 
 class DiskSaver : public Async {
  public:
@@ -66,7 +72,7 @@ class DiskSaver : public Async {
   std::shared_ptr<rocksdb::Cache> data_cache_;
 
   AsyncQueue read_async_;
-  std::vector<WriteAsyncQueue *> write_asyncs_;
+  WriteAsyncQueue write_async_;
 };
 
 }  // namespace rockin

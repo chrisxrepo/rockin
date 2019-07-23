@@ -37,13 +37,6 @@ struct DiskDB {
   int partition_id;
 };
 
-struct WriteAsyncQueue : AsyncQueue {
-  std::vector<QUEUE *> queues;
-  uint64_t snum;
-
-  WriteAsyncQueue() : snum(0) {}
-};
-
 DiskSaver::DiskSaver()
     : partition_num_(0), read_thread_num_(0), write_thread_num_(0) {}
 
@@ -65,10 +58,6 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
 
   meta_cache_ = rocksdb::NewLRUCache(1 << 30);
   data_cache_ = rocksdb::NewLRUCache(128 << 20);
-
-  for (int i = 0; i < write_thread_num; i++) {
-    write_asyncs_.push_back(new WriteAsyncQueue);
-  }
 
   for (int i = 0; i < partition_num; i++) {
     DiskDB *db = new DiskDB();
@@ -138,9 +127,9 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
     LOG(INFO) << "open rocksdb:" << partition_name;
     dbs_.push_back(db);
 
-    WriteAsyncQueue *async = write_asyncs_[i % write_thread_num];
-    async->queues.push_back((QUEUE *)malloc(sizeof(QUEUE)));
-    QUEUE_INIT(async->queues[async->queues.size() - 1]);
+    QUEUE *queue = (QUEUE *)malloc(sizeof(QUEUE));
+    write_async_.queues.push_back(queue);
+    QUEUE_INIT(queue);
   }
 
   return this->InitAsync(read_thread_num + write_thread_num);
@@ -186,18 +175,18 @@ static inline bool QueueArrayEmpty(std::vector<QUEUE *> &queues) {
 }
 
 static inline QUEUE *NextQueue(std::vector<QUEUE *> &queues, uint64_t &snum,
-                               int &pos) {
+                               int &idx) {
   for (size_t i = 0; i < queues.size(); i++) {
-    pos = (snum++) % queues.size();
-    if (!QUEUE_EMPTY(queues[pos])) {
-      return queues[pos];
+    idx = (snum++) % queues.size();
+    if (!QUEUE_EMPTY(queues[idx])) {
+      return queues[idx];
     }
   }
   return nullptr;
 }
 
 void DiskSaver::WriteAsyncWork(int idx) {
-  WriteAsyncQueue *async = write_asyncs_[idx];
+  WriteAsyncQueue *async = &write_async_;
 
   while (true) {
     uv_mutex_lock(&async->mutex);
@@ -205,19 +194,20 @@ void DiskSaver::WriteAsyncWork(int idx) {
       uv_cond_wait(&async->cond, &async->mutex);
     }
 
-    int queue_pos;
+    int queue_idx, count = 0;
     std::vector<uv__work *> works;
-    QUEUE *queue = NextQueue(async->queues, async->snum, queue_pos);
-    while (queue && !QUEUE_EMPTY(queue)) {
+    QUEUE *queue = NextQueue(async->queues, async->snum, queue_idx);
+    while (queue && count < 100 && !QUEUE_EMPTY(queue)) {
       QUEUE *q = QUEUE_HEAD(queue);
       QUEUE_REMOVE(q);
       uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
       works.push_back(w);
+      count++;
     }
     uv_mutex_unlock(&async->mutex);
 
     if (works.size() > 0) {
-      this->WriteBatch(queue_pos * write_thread_num_ + idx, works);
+      this->WriteBatch(queue_idx, works);
 
       // async done
       for (size_t i = 0; i < works.size(); i++) {
@@ -240,9 +230,9 @@ void DiskSaver::PostWork(int idx, QUEUE *q) {
     uv_cond_signal(&async->cond);
     uv_mutex_unlock(&async->mutex);
   } else if (idx < partition_num_) {
-    WriteAsyncQueue *async = write_asyncs_[idx % write_thread_num_];
+    WriteAsyncQueue *async = &write_async_;
     uv_mutex_lock(&async->mutex);
-    QUEUE_INSERT_TAIL(async->queues[idx / write_thread_num_], q);
+    QUEUE_INSERT_TAIL(async->queues[idx], q);
     uv_cond_signal(&async->cond);
     uv_mutex_unlock(&async->mutex);
   } else {
