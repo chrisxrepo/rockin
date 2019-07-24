@@ -36,6 +36,53 @@
   } while (0)
 
 namespace rockin {
+AsyncQueue::AsyncQueue(size_t max_size)
+    : max_size_(max_size), cur_size_(0), read_wait_(0), write_wait_(0) {
+  // init mutex
+  int retcode = uv_mutex_init(&mutex_);
+  LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
+
+  // init cond
+  retcode = uv_cond_init(&read_cond_);
+  LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
+  retcode = uv_cond_init(&write_cond_);
+  LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
+
+  // init queue
+  QUEUE_INIT(&queue_);
+}
+
+QUEUE *AsyncQueue::Pop() {
+  uv_mutex_lock(&mutex_);
+  while (QUEUE_EMPTY(&queue_)) {
+    read_wait_++;
+    uv_cond_wait(&read_cond_, &mutex_);
+    read_wait_--;
+  }
+
+  QUEUE *q = QUEUE_HEAD(&queue_);
+  QUEUE_REMOVE(q);
+  cur_size_--;
+  if (write_wait_ > 0) uv_cond_signal(&write_cond_);
+
+  uv_mutex_unlock(&mutex_);
+  return q;
+}
+
+void AsyncQueue::Push(QUEUE *q) {
+  uv_mutex_lock(&mutex_);
+  while (cur_size_ >= max_size_) {
+    write_wait_++;
+    uv_cond_wait(&write_cond_, &mutex_);
+    write_wait_--;
+  }
+
+  QUEUE_INSERT_TAIL(&queue_, q);
+  cur_size_++;
+  if (read_wait_ > 0) uv_cond_signal(&read_cond_);
+  uv_mutex_unlock(&mutex_);
+}
+
 Async::Async() {
   int retcode = uv_sem_init(&start_sem_, 0);
   LOG_IF(FATAL, retcode) << "uv_sem_init error:" << GetUvError(retcode);

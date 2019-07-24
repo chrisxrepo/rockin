@@ -63,7 +63,9 @@ MemSaver::MemSaver() : thread_num_(0) {}
 
 MemSaver::~MemSaver() {}
 
-struct MemAsyncQueue : AsyncQueue {
+class MemAsyncQueue : public AsyncQueue {
+ public:
+  MemAsyncQueue() : AsyncQueue(10000) {}
   std::shared_ptr<DicTable<object_t>> db;
 };
 
@@ -87,15 +89,7 @@ void MemSaver::AsyncWork(int idx) {
   MemAsyncQueue *async = asyncs_[idx];
 
   while (true) {
-    uv_mutex_lock(&async->mutex);
-    while (QUEUE_EMPTY(&async->queue)) {
-      uv_cond_wait(&async->cond, &async->mutex);
-    }
-
-    QUEUE *q = QUEUE_HEAD(&async->queue);
-    QUEUE_REMOVE(q);
-    uv_mutex_unlock(&async->mutex);
-
+    QUEUE *q = async->Pop();
     uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
     w->work(w);
 
@@ -110,10 +104,7 @@ void MemSaver::AsyncWork(int idx) {
 
 void MemSaver::PostWork(int idx, QUEUE *q) {
   MemAsyncQueue *async = asyncs_[idx];
-  uv_mutex_lock(&async->mutex);
-  QUEUE_INSERT_TAIL(&async->queue, q);
-  uv_cond_signal(&async->cond);
-  uv_mutex_unlock(&async->mutex);
+  async->Push(q);
 }
 
 struct GetObjHelper {

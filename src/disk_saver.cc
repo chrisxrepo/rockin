@@ -38,7 +38,10 @@ struct DiskDB {
 };
 
 DiskSaver::DiskSaver()
-    : partition_num_(0), read_thread_num_(0), write_thread_num_(0) {}
+    : partition_num_(0),
+      read_thread_num_(0),
+      write_thread_num_(0),
+      read_async_(100000) {}
 
 DiskSaver::~DiskSaver() {
   LOG(INFO) << "destroy rocks pool...";
@@ -147,15 +150,7 @@ void DiskSaver::ReadAsyncWork(int idx) {
   AsyncQueue *async = &read_async_;
 
   while (true) {
-    uv_mutex_lock(&async->mutex);
-    while (QUEUE_EMPTY(&async->queue)) {
-      uv_cond_wait(&async->cond, &async->mutex);
-    }
-
-    QUEUE *q = QUEUE_HEAD(&async->queue);
-    QUEUE_REMOVE(q);
-    uv_mutex_unlock(&async->mutex);
-
+    QUEUE *q = async->Pop();
     uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
     w->work(w);
 
@@ -226,10 +221,7 @@ void DiskSaver::WriteAsyncWork(int idx) {
 void DiskSaver::PostWork(int idx, QUEUE *q) {
   if (idx < 0) {
     AsyncQueue *async = &read_async_;
-    uv_mutex_lock(&async->mutex);
-    QUEUE_INSERT_TAIL(&async->queue, q);
-    uv_cond_signal(&async->cond);
-    uv_mutex_unlock(&async->mutex);
+    async->Push(q);
   } else if (idx < partition_num_) {
     WriteAsyncQueue *async = &write_async_;
     uv_mutex_lock(&async->mutex);

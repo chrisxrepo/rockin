@@ -7,23 +7,31 @@
 
 namespace rockin {
 
-struct AsyncQueue {
-  QUEUE queue;
-  uv_cond_t cond;
-  uv_mutex_t mutex;
+class AsyncQueue {
+ public:
+  /*
+   * max_size queue max size
+   */
+  AsyncQueue(size_t max_size);
 
-  AsyncQueue() {
-    // init mutex
-    int retcode = uv_mutex_init(&mutex);
-    LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
+  /*
+   * pop element form queue
+   * if queue empry, wait...
+   */
+  QUEUE *Pop();
 
-    // init cond
-    retcode = uv_cond_init(&cond);
-    LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
+  /*
+   * push element to queue
+   *if queue full, wait...
+   */
+  void Push(QUEUE *q);
 
-    // init queue
-    QUEUE_INIT(&queue);
-  }
+ private:
+  QUEUE queue_;
+  uv_mutex_t mutex_;
+  uv_cond_t read_cond_, write_cond_;
+  size_t max_size_, cur_size_;
+  int read_wait_, write_wait_;
 };
 
 class Async {
