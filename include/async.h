@@ -15,23 +15,51 @@ class AsyncQueue {
   AsyncQueue(size_t max_size);
 
   /*
-   * pop element form queue
-   * if queue empry, wait...
+   * queue_num the number of queues
+   * max_size the size of pequeue
+   */
+  AsyncQueue(size_t queue_num, size_t max_size);
+
+  /*
+   * pop element form queues[0]
+   * if queues[0] empry, wait...
    */
   QUEUE *Pop();
 
   /*
-   * push element to queue
-   *if queue full, wait...
+   * pop elements from queues
+   * if queues empry, wait...
+   * @max_num the max number pop elements
+   * @idx return queue idx
+   * @return pop elements
+   */
+  std::vector<QUEUE *> Pop(int &idx, size_t max_num);
+
+  /*
+   * push element to queues[0]
+   *if queues[0] full, wait...
    */
   void Push(QUEUE *q);
 
+  /*
+   * push element to queues[idx]
+   *if queue full, wait...
+   */
+  void Push(QUEUE *q, int idx);
+
  private:
-  QUEUE queue_;
+  inline bool QueuesEmpty();
+  inline int NextNoEmptyQueue();
+
+ private:
+  size_t queue_num_;
+  QUEUE *queues_;
   uv_mutex_t mutex_;
-  uv_cond_t read_cond_, write_cond_;
-  size_t max_size_, cur_size_;
-  int read_wait_, write_wait_;
+  uv_cond_t *conds_;
+  int *waits_;
+  size_t *sizes_;
+  size_t max_size_;
+  uint64_t snum_;
 };
 
 class Async {

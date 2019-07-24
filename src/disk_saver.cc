@@ -41,7 +41,8 @@ DiskSaver::DiskSaver()
     : partition_num_(0),
       read_thread_num_(0),
       write_thread_num_(0),
-      read_async_(100000) {}
+      read_async_(100000),
+      write_async_(nullptr) {}
 
 DiskSaver::~DiskSaver() {
   LOG(INFO) << "destroy rocks pool...";
@@ -54,6 +55,7 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
   read_thread_num_ = read_thread_num;
   write_thread_num_ = write_thread_num;
   partition_num_ = partition_num;
+  write_async_ = new AsyncQueue(partition_num, 10000);
 
   rocksdb::Env *env = rocksdb::Env::Default();
   env->SetBackgroundThreads(2, rocksdb::Env::LOW);
@@ -130,10 +132,6 @@ bool DiskSaver::Init(int read_thread_num, int write_thread_num,
     db->db_handle = handles[1];
     LOG(INFO) << "open rocksdb:" << partition_name;
     dbs_.push_back(db);
-
-    QUEUE *queue = (QUEUE *)malloc(sizeof(QUEUE));
-    write_async_.queues.push_back(queue);
-    QUEUE_INIT(queue);
   }
 
   return this->InitAsync(read_thread_num + write_thread_num);
@@ -147,10 +145,8 @@ void DiskSaver::AsyncWork(int idx) {
 }
 
 void DiskSaver::ReadAsyncWork(int idx) {
-  AsyncQueue *async = &read_async_;
-
   while (true) {
-    QUEUE *q = async->Pop();
+    QUEUE *q = read_async_.Pop();
     uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
     w->work(w);
 
@@ -163,44 +159,15 @@ void DiskSaver::ReadAsyncWork(int idx) {
   }
 }
 
-static inline bool QueueArrayEmpty(std::vector<QUEUE *> &queues) {
-  for (size_t i = 0; i < queues.size(); i++) {
-    if (!QUEUE_EMPTY(queues[i])) return false;
-  }
-  return true;
-}
-
-static inline QUEUE *NextQueue(std::vector<QUEUE *> &queues, uint64_t &snum,
-                               int &idx) {
-  for (size_t i = 0; i < queues.size(); i++) {
-    idx = (snum++) % queues.size();
-    if (!QUEUE_EMPTY(queues[idx])) {
-      return queues[idx];
-    }
-  }
-  return nullptr;
-}
-
 void DiskSaver::WriteAsyncWork(int idx) {
-  WriteAsyncQueue *async = &write_async_;
-
   while (true) {
-    uv_mutex_lock(&async->mutex);
-    while (QueueArrayEmpty(async->queues)) {
-      uv_cond_wait(&async->cond, &async->mutex);
-    }
-
-    int queue_idx, count = 0;
+    int queue_idx;
     std::vector<uv__work *> works;
-    QUEUE *queue = NextQueue(async->queues, async->snum, queue_idx);
-    while (queue && count < 100 && !QUEUE_EMPTY(queue)) {
-      QUEUE *q = QUEUE_HEAD(queue);
-      QUEUE_REMOVE(q);
-      uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
+    auto qs = write_async_->Pop(queue_idx, 100);
+    for (auto iter = qs.begin(); iter != qs.end(); ++iter) {
+      uv__work *w = QUEUE_DATA(*iter, struct uv__work, wq);
       works.push_back(w);
-      count++;
     }
-    uv_mutex_unlock(&async->mutex);
 
     if (works.size() > 0) {
       this->WriteBatch(queue_idx, works);
@@ -220,14 +187,9 @@ void DiskSaver::WriteAsyncWork(int idx) {
 
 void DiskSaver::PostWork(int idx, QUEUE *q) {
   if (idx < 0) {
-    AsyncQueue *async = &read_async_;
-    async->Push(q);
+    read_async_.Push(q);
   } else if (idx < partition_num_) {
-    WriteAsyncQueue *async = &write_async_;
-    uv_mutex_lock(&async->mutex);
-    QUEUE_INSERT_TAIL(async->queues[idx], q);
-    uv_cond_signal(&async->cond);
-    uv_mutex_unlock(&async->mutex);
+    write_async_->Push(q, idx);
   } else {
     LOG(ERROR) << "PostWork invilid partition idx:" << idx;
   }

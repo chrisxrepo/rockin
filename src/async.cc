@@ -36,52 +36,117 @@
   } while (0)
 
 namespace rockin {
-AsyncQueue::AsyncQueue(size_t max_size)
-    : max_size_(max_size), cur_size_(0), read_wait_(0), write_wait_(0) {
+AsyncQueue::AsyncQueue(size_t max_size) : AsyncQueue(1, max_size) {}
+
+AsyncQueue::AsyncQueue(size_t queue_num, size_t max_size)
+    : queue_num_(queue_num), max_size_(max_size), snum_(0) {
   // init mutex
   int retcode = uv_mutex_init(&mutex_);
   LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
 
-  // init cond
-  retcode = uv_cond_init(&read_cond_);
-  LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
-  retcode = uv_cond_init(&write_cond_);
-  LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
+  /*
+   * [0 - queue_num) for write
+   * queue_num for read
+   */
+  if (queue_num_ < 1) queue_num_ = 1;
 
-  // init queue
-  QUEUE_INIT(&queue_);
+  sizes_ = (size_t *)malloc(sizeof(size_t) * queue_num_);
+  memset(sizes_, 0, sizeof(size_t) * queue_num_);
+  queues_ = (QUEUE *)malloc(sizeof(QUEUE) * queue_num_);
+  for (size_t i = 0; i < queue_num_; i++) QUEUE_INIT(queues_ + i);
+
+  waits_ = (int *)malloc(sizeof(int) * (queue_num_ + 1));
+  memset(waits_, 0, sizeof(int) * (queue_num_ + 1));
+  conds_ = (uv_cond_t *)malloc(sizeof(uv_cond_t) * (queue_num_ + 1));
+
+  for (size_t i = 0; i < queue_num_ + 1; i++) {
+    retcode = uv_cond_init(conds_ + i);
+    LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
+  }
 }
 
 QUEUE *AsyncQueue::Pop() {
   uv_mutex_lock(&mutex_);
-  while (QUEUE_EMPTY(&queue_)) {
-    read_wait_++;
-    uv_cond_wait(&read_cond_, &mutex_);
-    read_wait_--;
+  while (QueuesEmpty()) {
+    (*(waits_ + queue_num_))++;
+    uv_cond_wait(conds_ + queue_num_, &mutex_);
+    (*(waits_ + queue_num_))--;
   }
 
-  QUEUE *q = QUEUE_HEAD(&queue_);
+  int idx = NextNoEmptyQueue();
+  QUEUE *q = QUEUE_HEAD(queues_ + idx);
   QUEUE_REMOVE(q);
-  cur_size_--;
-  if (write_wait_ > 0) uv_cond_signal(&write_cond_);
+  (*(sizes_ + idx))--;
+
+  if (*(waits_ + idx) > 0) uv_cond_signal(conds_ + idx);
 
   uv_mutex_unlock(&mutex_);
   return q;
 }
 
-void AsyncQueue::Push(QUEUE *q) {
+std::vector<QUEUE *> AsyncQueue::Pop(int &idx, size_t max_num) {
   uv_mutex_lock(&mutex_);
-  while (cur_size_ >= max_size_) {
-    write_wait_++;
-    uv_cond_wait(&write_cond_, &mutex_);
-    write_wait_--;
+  while (QueuesEmpty()) {
+    (*(waits_ + queue_num_))++;
+    uv_cond_wait(conds_ + queue_num_, &mutex_);
+    (*(waits_ + queue_num_))--;
   }
 
-  QUEUE_INSERT_TAIL(&queue_, q);
-  cur_size_++;
-  if (read_wait_ > 0) uv_cond_signal(&read_cond_);
+  int num = 0;
+  std::vector<QUEUE *> qs;
+  idx = NextNoEmptyQueue();
+  while (num < max_num && !QUEUE_EMPTY(queues_ + idx)) {
+    QUEUE *q = QUEUE_HEAD(queues_ + idx);
+    QUEUE_REMOVE(q);
+    qs.push_back(q);
+
+    (*(sizes_ + idx))--;
+    num++;
+  }
+
+  if (*(waits_ + idx) > 0) uv_cond_signal(conds_ + idx);
+
+  uv_mutex_unlock(&mutex_);
+  return qs;
+}
+
+void AsyncQueue::Push(QUEUE *q) { Push(q, 0); }
+
+void AsyncQueue::Push(QUEUE *q, int idx) {
+  if (idx >= queue_num_) return;
+
+  uv_mutex_lock(&mutex_);
+  while (*(sizes_ + idx) >= max_size_) {
+    (*(waits_ + idx))++;
+    uv_cond_wait(conds_ + idx, &mutex_);
+    (*(waits_ + idx))--;
+  }
+
+  QUEUE_INSERT_TAIL(queues_ + idx, q);
+  (*(sizes_ + idx))++;
+  if (*(waits_ + queue_num_) > 0) uv_cond_signal(conds_ + queue_num_);
+
   uv_mutex_unlock(&mutex_);
 }
+
+inline bool AsyncQueue::QueuesEmpty() {
+  for (size_t i = 0; i < queue_num_; i++) {
+    if (!QUEUE_EMPTY(queues_ + i)) return false;
+  }
+  return true;
+}
+
+inline int AsyncQueue::NextNoEmptyQueue() {
+  for (size_t i = 0; i < queue_num_; i++) {
+    int idx = (snum_++) % queue_num_;
+    if (!QUEUE_EMPTY(queues_ + idx)) {
+      return idx;
+    }
+  }
+  return 0;
+}
+
+/////////////////////////////////////////////////////////////////////////
 
 Async::Async() {
   int retcode = uv_sem_init(&start_sem_, 0);

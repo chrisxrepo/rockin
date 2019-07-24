@@ -14,27 +14,6 @@ class Cache;
 namespace rockin {
 struct DiskDB;
 
-struct WriteAsyncQueue {
-  QUEUE queue;
-  uv_cond_t cond;
-  uv_mutex_t mutex;
-  std::vector<QUEUE *> queues;
-  uint64_t snum;
-
-  WriteAsyncQueue() : snum(0) {
-    // init mutex
-    int retcode = uv_mutex_init(&mutex);
-    LOG_IF(FATAL, retcode) << "uv_mutex_init errer:" << GetUvError(retcode);
-
-    // init cond
-    retcode = uv_cond_init(&cond);
-    LOG_IF(FATAL, retcode) << "uv_cond_init errer:" << GetUvError(retcode);
-
-    // init queue
-    QUEUE_INIT(&queue);
-  }
-};
-
 class DiskSaver : public Async {
  public:
   static DiskSaver *Default();
@@ -87,7 +66,7 @@ class DiskSaver : public Async {
 
   //  AsyncQueue read_async_;
   AsyncQueue read_async_;
-  WriteAsyncQueue write_async_;
+  AsyncQueue *write_async_;
 };
 
 }  // namespace rockin
