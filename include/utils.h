@@ -33,6 +33,9 @@
   std::bind(&MemFun, std::placeholders::_1, std::placeholders::_2, \
             std::placeholders::_3)
 
+#define container_of(ptr, type, member) \
+  ((type *)((char *)(ptr)-offsetof(type, member)))
+
 namespace rockin {
 
 // get ctype error
@@ -95,7 +98,7 @@ extern uint32_t NextPower(uint32_t size);
 extern void RandomBytes(unsigned char bytes[], size_t len);
 
 // simple hashcode
-extern uint32_t HashCode(const char *src, size_t len);
+extern uint32_t SimpleHash(const char *src, size_t len);
 
 // bit 1 count
 extern size_t BitCount(void *s, long count);

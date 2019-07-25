@@ -1,70 +1,90 @@
 #include "mem_saver.h"
 #include <glog/logging.h>
-#include <uv.h>
+#include <stdlib.h>
 #include <mutex>
-#include <random>
-#include <thread>
-#include "mem_db.h"
+#include "dic_table.h"
+#include "siphash.h"
 #include "utils.h"
 
 namespace rockin {
-
 namespace {
-std::once_flag mem_saver_once_flag;
-MemSaver *g_mem_saver;
+std::once_flag once_flag;
+MemSaver *g_data;
 };  // namespace
 
 MemSaver *MemSaver::Default() {
-  std::call_once(mem_saver_once_flag, []() { g_mem_saver = new MemSaver(); });
-  return g_mem_saver;
+  std::call_once(once_flag, []() { g_data = new MemSaver(); });
+  return g_data;
 }
 
-MemSaver::MemSaver() {
-  unsigned char seed[16];
-  RandomBytes(seed, 16);
-  hash_ = new SipHash(seed);
+static uint64_t obj_key_hash(std::shared_ptr<object_t> obj) {
+  return rockin::Hash((const uint8_t *)obj->key->data, obj->key->len);
 }
 
-void MemSaver::Init(size_t thread_num) {
-  for (int i = 0; i < thread_num; i++) {
-    auto db = std::make_shared<MemDB>();
-    EventLoop *et = new EventLoop();
-    dbs_.push_back(std::make_pair(et, db));
+static bool obj_key_equal(std::shared_ptr<object_t> a,
+                          std::shared_ptr<object_t> b) {
+  if ((a == nullptr || a->key == nullptr) &&
+      (b == nullptr || b->key == nullptr))
+    return true;
 
-    uv_timer_t *reshah_timer = (uv_timer_t *)malloc(sizeof(uv_timer_t));
-    uv_timer_init(et->loop(), reshah_timer);
-    reshah_timer->data = malloc(sizeof(i));
-    *((int *)reshah_timer->data) = i;
-    uv_timer_start(reshah_timer,
-                   [](uv_timer_t *t) {
-                     auto db =
-                         MemSaver::Default()->dbs_[*((int *)t->data)].second;
-                     db->RehashTimer(GetMilliSec());
-                   },
-                   10, 100);
+  if (a == nullptr || a->key == nullptr || b == nullptr || b->key == nullptr)
+    return false;
 
-    uv_timer_t *expire_timer = (uv_timer_t *)malloc(sizeof(uv_timer_t));
-    uv_timer_init(et->loop(), expire_timer);
-    expire_timer->data = malloc(sizeof(i));
-    *((int *)expire_timer->data) = i;
-    uv_timer_start(expire_timer,
-                   [](uv_timer_t *t) {
-                     auto db =
-                         MemSaver::Default()->dbs_[*((int *)t->data)].second;
-                     db->ExpireTimer(GetMilliSec());
-                   },
-                   50, 100);
-
-    et->Start();
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  if (a->key->len != b->key->len) return false;
+  for (size_t i = 0; i < a->key->len; i++) {
+    if (*((char *)(a->key->data) + i) != *((char *)(b->key->data) + i)) {
+      return false;
+    }
   }
+  return true;
 }
 
-void MemSaver::DoCmd(MemPtr key, EventLoop::LoopCallback cb) {
-  uint64_t h = hash_->Hash((const uint8_t *)key->data, key->len);
-  auto pair = dbs_[h % dbs_.size()];
-  pair.first->RunInLoopNoWait(cb, pair.second);
+static int obj_key_compare(std::shared_ptr<object_t> a,
+                           std::shared_ptr<object_t> b) {
+  if ((a == nullptr || a->key == nullptr) &&
+      (b == nullptr || b->key == nullptr))
+    return 0;
+  if (a == nullptr || a->key == nullptr) return -1;
+  if (b == nullptr || b->key == nullptr) return 1;
+
+  for (size_t i = 0; i < a->key->len && i < b->key->len; i++) {
+    uint8_t ac = *((uint8_t *)(a->key->data) + i);
+    uint8_t bc = *((uint8_t *)(b->key->data) + i);
+    if (ac > bc) return 1;
+    if (ac < bc) return -1;
+  }
+
+  if (a->key->len > b->key->len) return 1;
+  if (a->key->len < b->key->len) return -1;
+  return 0;
 }
+
+MemSaver::MemSaver() { uv_key_create(&key_); }
+
+MemSaver::~MemSaver() {}
+
+bool MemSaver::Init() {
+  void *arg = uv_key_get(&key_);
+  if (arg == nullptr) {
+    arg = new DicTable<object_t>(obj_key_equal, obj_key_hash);
+  }
+  return true;
+}
+
+// get obj from memsaver
+ObjPtr MemSaver::GetObj(BufPtr key) { return nullptr; }
+
+// get objs from memsaver
+ObjPtrs MemSaver::GetObj(BufPtrs keys) { return ObjPtrs(); }
+
+// insert obj to memsaver
+void MemSaver::InsertObj(ObjPtr obj) {}
+
+// insert obj to memsaver
+void MemSaver::InsertObj(ObjPtrs obj) {
+  //
+}
+
+void MemSaver::UpdateExpire(ObjPtr obj, uint64_t expire_ms) {}
 
 }  // namespace rockin

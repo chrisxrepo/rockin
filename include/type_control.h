@@ -1,10 +1,8 @@
 #pragma once
 #include <atomic>
 #include <iostream>
-#include "cmd_table.h"
 #include "utils.h"
-
-#define DBNum 1
+#include "workers.h"
 
 namespace rockin {
 class RockinConn;
@@ -12,10 +10,12 @@ class CmdArgs;
 
 struct MultiResult {
   std::atomic<uint32_t> cnt;
+  std::atomic<bool> error;
   std::atomic<int64_t> int_value;
-  std::vector<MemPtr> str_values;
+  std::vector<BufPtr> str_values;
 
-  MultiResult(uint32_t cnt_) : cnt(cnt_), int_value(0), str_values(cnt_) {}
+  MultiResult(uint32_t cnt_)
+      : cnt(cnt_), error(false), int_value(0), str_values(cnt_) {}
 };
 
 // COMMAND

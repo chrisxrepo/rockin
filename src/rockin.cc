@@ -2,13 +2,12 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
-#include "cmd_table.h"
 #include "disk_saver.h"
-#include "mem_saver.h"
-#include "rockin_alloc.h"
+#include "mem_alloc.h"
 #include "rockin_server.h"
 #include "rocksdb/db.h"
 #include "utils.h"
+#include "workers.h"
 
 void signal_handle(uv_signal_t* handle, int signum) {
   if (signum == SIGINT) {
@@ -38,16 +37,13 @@ int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
 
   // init rocksdb
-  rockin::DiskSaver::Default()->InitAndCreate(1, "/tmp/rocksdb");
+  rockin::DiskSaver::Default()->Init(1, "/tmp/rocksdb");
 
   // init handle
-  rockin::CmdTable::Default()->Init();
-
-  // work thread pool
-  rockin::MemSaver::Default()->Init(1);
+  rockin::Workers::Default()->Init(4);
 
   // listern server
-  rockin::RockinServer::Default()->Init(1);
+  rockin::RockinServer::Default()->Init(2);
   if (rockin::RockinServer::Default()->Service(9000) == false) {
     LOG(ERROR) << "start service fail";
     return -1;

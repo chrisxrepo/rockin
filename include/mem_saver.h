@@ -1,31 +1,37 @@
 #pragma once
 #include <uv.h>
-#include <atomic>
-#include <iostream>
-#include <vector>
-#include "event_loop.h"
-#include "rockin_alloc.h"
-#include "siphash.h"
+#include "async.h"
+#include "mem_alloc.h"
 
 namespace rockin {
-class EventLoop;
-class MemDB;
+struct MemAsyncQueue;
 
 class MemSaver {
  public:
-  MemSaver();
   static MemSaver *Default();
 
-  void Init(size_t thread_num);
+  MemSaver();
+  ~MemSaver();
 
-  void DoCmd(MemPtr key, EventLoop::LoopCallback cb);
+  bool Init();
 
-  const std::vector<std::pair<EventLoop *, std::shared_ptr<MemDB>>> &dbs() {
-    return dbs_;
-  }
+  // get obj from memsaver
+  ObjPtr GetObj(BufPtr key);
+
+  // get objs from memsaver
+  ObjPtrs GetObj(BufPtrs keys);
+
+  // insert obj to memsaver
+  void InsertObj(ObjPtr obj);
+
+  // insert obj to memsaver
+  void InsertObj(ObjPtrs obj);
+
+  // update expire
+  void UpdateExpire(ObjPtr obj, uint64_t expire_ms);
 
  private:
-  SipHash *hash_;
-  std::vector<std::pair<EventLoop *, std::shared_ptr<MemDB>>> dbs_;
+  uv_key_t key_;
 };
+
 }  // namespace rockin

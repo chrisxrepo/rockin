@@ -12,4 +12,6 @@ class SipHash {
  private:
   uint8_t seed_[16];
 };
+
+extern uint64_t Hash(const void *in, int inlen);
 }  // namespace rockin

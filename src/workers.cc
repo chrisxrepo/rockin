@@ -1,26 +1,28 @@
-#include "cmd_table.h"
+#include "workers.h"
 #include <glog/logging.h>
 #include <algorithm>
 #include <mutex>
 #include <sstream>
 #include "cmd_args.h"
+#include "mem_saver.h"
 #include "rockin_conn.h"
-#include "type_common.h"
+#include "siphash.h"
+#include "type_control.h"
 #include "type_string.h"
 
 namespace rockin {
 
 namespace {
-std::once_flag cmd_table_once_flag;
-CmdTable* g_cmd_table;
+std::once_flag worker_once_flag;
+Workers *g_worker;
 };  // namespace
 
-CmdTable* CmdTable::Default() {
-  std::call_once(cmd_table_once_flag, []() { g_cmd_table = new CmdTable(); });
-  return g_cmd_table;
+Workers *Workers::Default() {
+  std::call_once(worker_once_flag, []() { g_worker = new Workers(); });
+  return g_worker;
 }
 
-void CmdTable::Init() {
+bool Workers::Init(size_t thread_num) {
   // COMMAND
   auto command_ptr = std::make_shared<CommandCmd>(CmdInfo("command", 1));
   cmd_table_.insert(std::make_pair("command", command_ptr));
@@ -142,11 +144,39 @@ void CmdTable::Init() {
   // STRINGDEBUG key
   auto strdebug_ptr = std::make_shared<StringDebug>(CmdInfo("strdebug", 2));
   cmd_table_.insert(std::make_pair("strdebug", strdebug_ptr));
+
+  thread_num_ = thread_num;
+  for (size_t i = 0; i < thread_num; i++)
+    asyncs_.push_back(new AsyncQueue(1000));
+  return this->InitAsync(thread_num);
 }
 
-void CmdTable::HandeCmd(std::shared_ptr<RockinConn> conn,
-                        std::shared_ptr<CmdArgs> cmd_args) {
-  auto& args = cmd_args->args();
+void Workers::AsyncWork(int idx) {
+  MemSaver::Default()->Init();
+
+  AsyncQueue *async = asyncs_[idx];
+  while (true) {
+    QUEUE *q = async->Pop();
+    uv__work *w = QUEUE_DATA(q, struct uv__work, wq);
+    w->work(w);
+
+    // async done
+    uv_mutex_lock(&w->loop->wq_mutex);
+    w->work = NULL;
+    QUEUE_INSERT_TAIL(&w->loop->wq, &w->wq);
+    uv_async_send(&w->loop->wq_async);
+    uv_mutex_unlock(&w->loop->wq_mutex);
+  }
+}
+
+void Workers::PostWork(int idx, QUEUE *q) {
+  AsyncQueue *async = asyncs_[idx];
+  async->Push(q);
+}
+
+void Workers::HandeCmd(std::shared_ptr<RockinConn> conn,
+                       std::shared_ptr<CmdArgs> cmd_args) {
+  auto &args = cmd_args->args();
 
   if (args.empty()) return;
 
@@ -157,7 +187,7 @@ void CmdTable::HandeCmd(std::shared_ptr<RockinConn> conn,
     std::ostringstream build;
     build << "ERR unknown command `" << cmd << "`, with args beginning with: ";
     for (int i = 1; i < args.size(); i++) build << "`" << args[i] << "`, ";
-    conn->ReplyError(rockin::make_shared<membuf_t>(build.str()));
+    conn->ReplyError(make_buffer(build.str()));
     return;
   }
 
@@ -166,11 +196,119 @@ void CmdTable::HandeCmd(std::shared_ptr<RockinConn> conn,
       int(args.size()) < -iter->second->info().arity) {
     std::ostringstream build;
     build << "ERR wrong number of arguments for '" << cmd << "' command";
-    conn->ReplyError(rockin::make_shared<membuf_t>(build.str()));
+    conn->ReplyError(make_buffer(build.str()));
     return;
   }
 
   iter->second->Do(cmd_args, conn);
+}
+
+struct WorkHelper {
+  std::shared_ptr<RockinConn> conn;
+  std::function<BufPtrs()> handle;
+  BufPtrs result;
+};
+
+void Workers::AsyncWork(BufPtr mkey, std::shared_ptr<RockinConn> conn,
+                        std::function<BufPtrs()> handle) {
+  WorkHelper *helper = new WorkHelper();
+  helper->conn = conn;
+  helper->handle = handle;
+
+  uv_work_t *req = (uv_work_t *)malloc(sizeof(uv_work_t));
+  req->data = helper;
+
+  this->AsyncQueueWork(rockin::Hash(mkey->data, mkey->len) % thread_num_,
+                       conn->loop(), req,
+                       [](uv_work_t *req) {
+                         WorkHelper *helper = (WorkHelper *)req->data;
+                         helper->result = helper->handle();
+                       },
+                       [](uv_work_t *req, int status) {
+                         WorkHelper *helper = (WorkHelper *)req->data;
+                         if (helper->result.size() > 0)
+                           helper->conn->WriteData(std::move(helper->result));
+                         delete helper;
+                         free(req);
+                       });
+}
+
+struct MultiWorkData {
+  std::shared_ptr<RockinConn> conn;
+  std::function<ObjPtr(BufPtr)> mid_handle;
+  std::function<BufPtrs(const ObjPtrs &)> handle;
+  std::atomic<int> count;
+  BufPtrs mkeys;
+  BufPtr key;
+  ObjPtrs objs;
+  BufPtrs result;
+};
+
+struct MultiWorkHelper {
+  int idx;
+  std::shared_ptr<MultiWorkData> data;
+};
+
+void Workers::AsyncWork(BufPtrs mkeys, std::shared_ptr<RockinConn> conn,
+                        std::function<ObjPtr(BufPtr)> mid_handle, BufPtr key,
+                        std::function<BufPtrs(const ObjPtrs &)> handle) {
+  auto data = std::make_shared<MultiWorkData>();
+  data->conn = conn;
+  data->mid_handle = mid_handle;
+  data->handle = handle;
+  data->count = mkeys.size();
+  data->mkeys = mkeys;
+  data->key = key;
+  data->objs = ObjPtrs(mkeys.size());
+
+  for (size_t i = 0; i < mkeys.size(); i++) {
+    uv_work_t *req = (uv_work_t *)malloc(sizeof(uv_work_t));
+    MultiWorkHelper *helper = new MultiWorkHelper();
+    helper->idx = i;
+    helper->data = data;
+    req->data = helper;
+
+    auto key = mkeys[i];
+    this->AsyncQueueWork(
+        rockin::Hash(key->data, key->len) % thread_num_, conn->loop(), req,
+        [](uv_work_t *req) {
+          MultiWorkHelper *helper = (MultiWorkHelper *)req->data;
+          helper->data->objs[helper->idx] =
+              helper->data->mid_handle(helper->data->mkeys[helper->idx]);
+        },
+        [](uv_work_t *req, int status) {
+          MultiWorkHelper *helper = (MultiWorkHelper *)req->data;
+          auto data = helper->data;
+          delete helper;
+          free(req);
+
+          data->count--;
+          if (data->count == 0) {
+            uv_work_t *req = (uv_work_t *)malloc(sizeof(uv_work_t));
+            MultiWorkHelper *helper = new MultiWorkHelper();
+            helper->data = data;
+            req->data = helper;
+
+            Workers::Default()->AsyncQueueWork(
+                rockin::Hash(data->key->data, data->key->len) %
+                    Workers::Default()->thread_num_,
+                data->conn->loop(), req,
+                [](uv_work_t *req) {
+                  MultiWorkHelper *helper = (MultiWorkHelper *)req->data;
+                  helper->data->result =
+                      helper->data->handle(helper->data->objs);
+                },
+                [](uv_work_t *req, int status) {
+                  MultiWorkHelper *helper = (MultiWorkHelper *)req->data;
+                  if (helper->data->result.size() > 0)
+                    helper->data->conn->WriteData(
+                        std::move(helper->data->result));
+                  delete helper;
+                  free(req);
+                });
+          }
+        });
+  }
 }
 
 }  // namespace rockin

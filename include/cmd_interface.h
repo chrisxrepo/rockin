@@ -2,7 +2,6 @@
 #include <iostream>
 #include "coding.h"
 #include "disk_saver.h"
-#include "mem_db.h"
 #include "utils.h"
 
 // meta value header
@@ -28,24 +27,24 @@
   } while (0)
 
 // data key header
-// |  key len  |   key    |  version  |
-// |   2 byte  |   n byte |   4 byte  |
-#define BASE_DATA_KEY_SIZE(n) (6 + (n))
-#define DATA_KEY_LNE(begin) DecodeFixed16((const char *)(begin))
-#define DATA_KEY_START(begin) ((const char *)(begin) + 2)
-#define DATA_KEY_VERSION(begin) \
-  DecodeFixed32((const char *)(begin) + (DATA_KEY_LNE(begin) + 2))
+// | key type |  key len  |   key    |  version  |
+// |  1 byte  |   2 byte  |   n byte |   4 byte  |
 
-#define SET_DATA_KEY_HEADER(begin, key, len, version)    \
-  do {                                                   \
-    EncodeFixed16((char *)(begin), len);                 \
-    memcpy((char *)(begin) + 2, key, len);               \
-    EncodeFixed32((char *)(begin) + (len + 2), version); \
+#define STRING_FLAG 'S'
+
+#define BASE_FIELD_KEY_SIZE(n) (7 + (n))
+#define FIELD_KEY_LNE(begin) DecodeFixed16((const char *)(begin) + 1)
+#define FIELD_KEY_START(begin) ((const char *)(begin) + 3)
+#define FIELD_KEY_VERSION(begin) \
+  DecodeFixed32((const char *)(begin) + (FIELD_KEY_LNE(begin) + 3))
+
+#define SET_FIELD_KEY_HEADER(type, begin, key, len, version) \
+  do {                                                       \
+    EncodeFixed8((char *)(begin), type);                     \
+    EncodeFixed16((char *)(begin) + 1, len);                 \
+    memcpy((char *)(begin) + 3, key, len);                   \
+    EncodeFixed32((char *)(begin) + (len + 3), version);     \
   } while (0)
-
-#define CHECK_META(o, t, e, ex)                                \
-  ((o) != nullptr && (o)->type == (t) && (o)->encode == (e) && \
-   (o)->expire == (ex))
 
 namespace rockin {
 class CmdArgs;
@@ -67,30 +66,6 @@ class Cmd {
                   std::shared_ptr<RockinConn> conn) = 0;
 
   const CmdInfo &info() { return info_; }
-
-  std::shared_ptr<MemObj> GetMeta(int dbindex, MemPtr key, std::string &meta,
-                                  uint32_t &version) {
-    version = 0;
-    auto diskdb = DiskSaver::Default()->GetDB(key);
-    bool exist = diskdb->GetMeta(dbindex, key, &meta);
-    if (exist && meta.length() >= BASE_META_VALUE_SIZE) {
-      version = META_VALUE_VERSION(meta.c_str());
-      uint8_t type = META_VALUE_TYPE(meta.c_str());
-      uint64_t expire = META_VALUE_EXPIRE(meta.c_str());
-      if (type == Type_None || (expire > 0 && expire <= GetMilliSec())) {
-        return nullptr;
-      }
-
-      auto obj = rockin::make_shared<MemObj>();
-      obj->key = key;
-      obj->type = type;
-      obj->encode = META_VALUE_ENCODE(meta.c_str());
-      obj->version = version;
-      obj->expire = expire;
-      return obj;
-    }
-    return nullptr;
-  }
 
  private:
   CmdInfo info_;

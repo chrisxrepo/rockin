@@ -51,8 +51,7 @@ class DataCompactFilter : public rocksdb::CompactionFilter {
 class DataCompactFilterFactory : public rocksdb::CompactionFilterFactory {
  public:
   DataCompactFilterFactory(const std::string& name, rocksdb::DB** db,
-                           std::vector<rocksdb::ColumnFamilyHandle*>* mt_handls,
-                           int index);
+                           rocksdb::ColumnFamilyHandle** mt_handle);
 
   std::unique_ptr<rocksdb::CompactionFilter> CreateCompactionFilter(
       const rocksdb::CompactionFilter::Context& context) override;
@@ -62,8 +61,7 @@ class DataCompactFilterFactory : public rocksdb::CompactionFilterFactory {
  private:
   std::string name_;
   rocksdb::DB** db_;
-  std::vector<rocksdb::ColumnFamilyHandle*>* mt_handls_;
-  int index_;
+  rocksdb::ColumnFamilyHandle** mt_handle_;
 };
 
 }  // namespace rockin

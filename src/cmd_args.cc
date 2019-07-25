@@ -3,14 +3,14 @@
 #include <algorithm>
 #include <sstream>
 #include "rockin_conn.h"
-#include "type_common.h"
+#include "type_control.h"
 #include "type_string.h"
 #include "utils.h"
 
 namespace rockin {
 CmdArgs::CmdArgs() : mbulk_(-1) {}
 
-MemPtr CmdArgs::Parse(ByteBuf &buf) {
+BufPtr CmdArgs::Parse(ByteBuf &buf) {
   if (args_.size() == mbulk_) {
     return nullptr;
   }
@@ -29,7 +29,7 @@ MemPtr CmdArgs::Parse(ByteBuf &buf) {
   return nullptr;
 }
 
-MemPtr CmdArgs::ParseMultiCommand(ByteBuf &buf) {
+BufPtr CmdArgs::ParseMultiCommand(ByteBuf &buf) {
   char *ptr = buf.readptr();
   if (*ptr == '*') {
     char *end = Strchr2(ptr, buf.readable(), '\r', '\n');
@@ -42,7 +42,7 @@ MemPtr CmdArgs::ParseMultiCommand(ByteBuf &buf) {
       std::ostringstream build;
       build << "ERR Protocol error: invalid multi bulk length:"
             << std::string(ptr + 1, end - ptr - 1);
-      return rockin::make_shared<membuf_t>(build.str());
+      return make_buffer(build.str());
     }
 
     buf.move_readptr(end - ptr + 2);
@@ -58,7 +58,7 @@ MemPtr CmdArgs::ParseMultiCommand(ByteBuf &buf) {
     if (*nptr != '$') {
       std::ostringstream build;
       build << "ERR Protocol error: expected '$', got '" << *nptr << "'";
-      return rockin::make_shared<membuf_t>(build.str());
+      return make_buffer(build.str());
     }
 
     int bulk = (int)StringToInt64(nptr + 1, end - nptr - 1);
@@ -66,7 +66,7 @@ MemPtr CmdArgs::ParseMultiCommand(ByteBuf &buf) {
       std::ostringstream build;
       build << "ERR Protocol error: invalid bulk length:"
             << std::string(nptr + 1, end - nptr - 1);
-      return rockin::make_shared<membuf_t>(build.str());
+      return make_buffer(build.str());
     }
 
     char *dptr = end + 2;
@@ -77,17 +77,17 @@ MemPtr CmdArgs::ParseMultiCommand(ByteBuf &buf) {
     if (*(dptr + bulk) != '\r' || *(dptr + bulk + 1) != '\n') {
       std::ostringstream build;
       build << "ERR Protocol error: invalid bulk length";
-      return rockin::make_shared<membuf_t>(build.str());
+      return make_buffer(build.str());
     }
 
-    args_.push_back(rockin::make_shared<membuf_t>(dptr, bulk));
+    args_.push_back(make_buffer(dptr, bulk));
     buf.move_readptr(dptr - nptr + bulk + 2);
   }
 
   return nullptr;
 }
 
-MemPtr CmdArgs::ParseInlineCommand(ByteBuf &buf) {
+BufPtr CmdArgs::ParseInlineCommand(ByteBuf &buf) {
   char *ptr = buf.readptr();
   char *end = Strchr2(ptr, buf.readable(), '\r', '\n');
   if (end == nullptr) {
@@ -136,7 +136,7 @@ MemPtr CmdArgs::ParseInlineCommand(ByteBuf &buf) {
           ptr++;
         }
       }
-      args_.push_back(rockin::make_shared<membuf_t>(build.str()));
+      args_.push_back(make_buffer(build.str()));
 
     } else if (*ptr == '\'') {
       ptr++;
@@ -153,14 +153,14 @@ MemPtr CmdArgs::ParseInlineCommand(ByteBuf &buf) {
           ptr++;
         }
       }
-      args_.push_back(rockin::make_shared<membuf_t>(build.str()));
+      args_.push_back(make_buffer(build.str()));
 
     } else {
       char *space = Strchr(ptr, end - ptr, ' ');
       if (space == nullptr) {
         space = end;
       }
-      args_.push_back(rockin::make_shared<membuf_t>(ptr, space - ptr));
+      args_.push_back(make_buffer(ptr, space - ptr));
       ptr = space;
     }
   }

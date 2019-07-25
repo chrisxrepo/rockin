@@ -51,13 +51,13 @@ bool DataCompactFilter::Filter(int level, const rocksdb::Slice& key,
                                const rocksdb::Slice& existing_value,
                                std::string* new_value,
                                bool* value_changed) const {
-  if (key.size() < BASE_DATA_KEY_SIZE(1)) {
+  if (key.size() < BASE_FIELD_KEY_SIZE(1)) {
     return true;
   }
 
-  size_t keylen = DATA_KEY_LNE(key.data());
-  const char* data = DATA_KEY_START(key.data());
-  uint32_t version = DATA_KEY_VERSION(key.data());
+  size_t keylen = FIELD_KEY_LNE(key.data());
+  const char* data = FIELD_KEY_START(key.data());
+  uint32_t version = FIELD_KEY_VERSION(key.data());
 
   std::string meta;
   auto status = db_->Get(rocksdb::ReadOptions(), handle_,
@@ -84,14 +84,14 @@ bool DataCompactFilter::Filter(int level, const rocksdb::Slice& key,
 
 DataCompactFilterFactory::DataCompactFilterFactory(
     const std::string& name, rocksdb::DB** db,
-    std::vector<rocksdb::ColumnFamilyHandle*>* mt_handls, int index)
-    : name_(name), db_(db), mt_handls_(mt_handls), index_(index) {}
+    rocksdb::ColumnFamilyHandle** mt_handle)
+    : name_(name), db_(db), mt_handle_(mt_handle) {}
 
 std::unique_ptr<rocksdb::CompactionFilter>
 DataCompactFilterFactory::CreateCompactionFilter(
     const rocksdb::CompactionFilter::Context& context) {
   return std::unique_ptr<rocksdb::CompactionFilter>(
-      new DataCompactFilter(name_, *db_, (*mt_handls_)[index_]));
+      new DataCompactFilter(name_, *db_, *mt_handle_));
 }
 
 }  // namespace rockin
